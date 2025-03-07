@@ -4,10 +4,14 @@ project(evolving_planets)
 
 set(CMAKE_CXX_STANDARD 17)
 
+file(GLOB SOURCE_FILES src/*.cpp)
+file(GLOB HEADER_FILES include/*.hpp)
+file(GLOB SHADERS shaders/*.metal)
+
 add_executable(main
-        src/main.cpp
-        src/App.cpp
-        src/renderer.cpp
+        ${SOURCE_FILES}
+        ${HEADER_FILES}
+        ${SHADERS}
 )
 
 find_package(SDL2 REQUIRED)
@@ -26,3 +30,14 @@ target_link_libraries(main PUBLIC
 set_target_properties(main PROPERTIES
         BUILD_RPATH "/Library/Frameworks"
 )
+
+
+# SET UP FOR XCODE
+file(GLOB ALL_FILES
+        src/*.cpp
+        include/*.hpp
+        shaders/*.metal
+        )
+source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}"
+        PREFIX "Implementation"
+        FILES ${ALL_FILES})
