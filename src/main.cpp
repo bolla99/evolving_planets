@@ -4,15 +4,13 @@
 #define CA_PRIVATE_IMPLEMENTATION
 #define MTL_PRIVATE_IMPLEMENTATION
 
-#include "app.hpp"
-
-void LogSDLError();
+#include "App.hpp"
 
 int main()
 {
     try
     {
-        app(800, 600).run();
+        App(800, 600).run();
     }
     catch (const std::exception& e)
     {

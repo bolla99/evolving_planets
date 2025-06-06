@@ -5,28 +5,28 @@
 #ifndef APP_HPP
 #define APP_HPP
 #include <memory>
-#include <renderer.hpp>
+#include <Renderer.hpp>
 
-class app
+class App
 {
 public:
-    app(
+    App(
         int width,
         int height
         );
-    ~app();
+    ~App();
 
-    app(const app& app) = delete;
-    app& operator=(const app& app) = delete;
+    App(const App& app) = delete;
+    App& operator=(const App& app) = delete;
 
-    app(app&& app) = delete;
-    app& operator=(app&& app) = delete;
+    App(App&& app) = delete;
+    App& operator=(App&& app) = delete;
 
     void virtual run();
 
 private:
     SDL_Window* _window;
-    std::unique_ptr<renderer> _renderer;
+    std::unique_ptr<Renderer> _renderer;
 };
 
 #endif //APP_HPP

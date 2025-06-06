@@ -2,17 +2,16 @@
 // Created by Giovanni Bollati on 06/03/25.
 //
 
-#include "app.hpp"
+#include "App.hpp"
 
 #include <iostream>
 #include <stdexcept>
 #include <SDL2/SDL.h>
-#include <renderer.hpp>
+#include <Renderer.hpp>
 
-
-app::app(
-    int width,
-    int height
+App::App(
+    const int width,
+    const int height
     )
 {
     if (SDL_Init(SDL_INIT_VIDEO) < 0)
@@ -34,7 +33,7 @@ app::app(
     }
     try
     {
-        _renderer = std::make_unique<renderer>(_window);
+        _renderer = std::make_unique<Renderer>(_window);
     } catch (const std::exception& e)
     {
         SDL_Quit();
@@ -42,21 +41,21 @@ app::app(
     }
 }
 
-app::~app()
+App::~App()
 {
     std::cout << "app::~app()" << std::endl;
-    
-    _renderer.reset();
-    
-    std::cout << "Calling SDL_DestroyWindow" << std::endl;
+    std::cout << "Calling SDL_DestroyWindow()" << std::endl;
     SDL_DestroyWindow(_window);
-    
+    std::cout << "SDL_DestroyWindow call ended" << std::endl;
+    std::cout << "Calling SDL_Quit()" << std::endl;
     SDL_Quit();
+    std::cout << "SDL_Quit call ended" << std::endl;
 }
 
-void app::run()
+void App::run()
 {
     std::cout << "app::run()" << std::endl;
+
     SDL_Event event;
     auto running = true;
     while (running)
