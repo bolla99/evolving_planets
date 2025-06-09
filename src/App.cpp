@@ -9,6 +9,12 @@
 #include <SDL2/SDL.h>
 #include <Renderer.hpp>
 
+#include "AssimpRenderableLoader.hpp"
+
+
+// app constructor initialize sdl, create a window and try to
+// create a renderer from the custom class Renderer, which is in turn responsible
+// for the acquisition of the sdl renderer, besides the metal structures.
 App::App(
     const int width,
     const int height
@@ -33,7 +39,7 @@ App::App(
     }
     try
     {
-        _renderer = std::make_unique<Renderer>(_window);
+        _renderer = std::make_unique<Renderer>(_window, std::make_unique<AssimpRenderableLoader>());
     } catch (const std::exception& e)
     {
         SDL_Quit();
@@ -41,6 +47,9 @@ App::App(
     }
 }
 
+/*
+ * sdl and window cleanup by custom sdl functions
+*/
 App::~App()
 {
     std::cout << "app::~app()" << std::endl;
@@ -52,6 +61,10 @@ App::~App()
     std::cout << "SDL_Quit call ended" << std::endl;
 }
 
+// sdl loop: input management and renderer update
+// right now input management is decoupled from the renderer, which means
+// that the renderer is not aware of the input events, but input events can
+// refer to the renderer, for example to change the state of a renderable object.
 void App::run()
 {
     std::cout << "app::run()" << std::endl;

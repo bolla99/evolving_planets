@@ -2,38 +2,77 @@
 // Created by Giovanni Bollati on 06/03/25.
 //
 
-
-#include "renderer.hpp"
+#include <simd/simd.h>
+#include "Renderer.hpp"
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
 #include <QuartzCore/QuartzCore.hpp>
 #include <iostream>
+#include <set>
 
-renderer::renderer(SDL_Window* sdl_window)
+#include "Renderable.hpp"
+
+using MTL::PrimitiveType;
+
+// resources acquisition
+// device, layer, library, PSOs, VertexDescriptors
+Renderer::Renderer(SDL_Window* sdl_window, std::unique_ptr<IRenderableLoader> renderableLoader) : _renderableLoader(std::move(renderableLoader))
 {
     _device = NS::TransferPtr(MTL::CreateSystemDefaultDevice());
     if (!_device) throw std::runtime_error("Failed to create device");
 
-    sdl_renderer = SDL_CreateRenderer(sdl_window, -1, SDL_RENDERER_PRESENTVSYNC);
-    if (!sdl_renderer)
+    _sdl_renderer = SDL_CreateRenderer(sdl_window, -1, SDL_RENDERER_PRESENTVSYNC);
+    if (!_sdl_renderer)
     {
         throw std::runtime_error(SDL_GetError());
     }
 
-    _layer = static_cast<CA::MetalLayer*>(SDL_RenderGetMetalLayer(sdl_renderer));
-    if (!_layer)
-    {
-        throw std::runtime_error(SDL_GetError());
-    }
+    _layer = static_cast<CA::MetalLayer*>(SDL_RenderGetMetalLayer(_sdl_renderer));
+    if (!_layer) throw std::runtime_error(SDL_GetError());
+
     _layer->setDevice(_device.get());
     _layer->setPixelFormat(MTL::PixelFormatBGRA8Unorm);
+
+    auto libraryPath = NS::Bundle::mainBundle()->resourcePath()->stringByAppendingString(
+    NS::String::string("/Shaders.metallib", NS::ASCIIStringEncoding)
+        );
+    std::cout << libraryPath->utf8String() << std::endl;
+    NS::Error* error;
+    _library = NS::TransferPtr(_device->newLibrary(libraryPath, &error));
+    if (!_library.get()) throw std::runtime_error(error->localizedDescription()->utf8String());
+
+    _pipelineStateObjects = std::unordered_map<std::string, std::shared_ptr<PipelineStateObject>>();
+
+    setupVertexDescriptors();
+    loadPSOs(psoConfigs);
+
+    //createPSO("triangle_pso", "vertexShader", "fragmentShader", P);
+    //createPSO("PC", "vertexColorShader", "fragmentColorShader", PC);
 }
 
-void renderer::update() const
+// rendering loop
+void Renderer::update() const
 {
     auto pool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
     const auto queue = NS::TransferPtr(_device->newCommandQueue());
     const auto drawable = _layer->nextDrawable();
+    
+    simd::float3 triangle[] = {
+        {0.5f, 0.0f, 0.0f},
+        {-0.5f, 0.5f, 0.0f},
+        {-0.5f, -0.5f, 0.0f}
+    };
+    simd::float4 triangle_colors[] = {
+        {1.0f, 0.0f, 0.0f, 1.0f},
+        {0.0f, 1.0f, 0.0f, 1.0f},
+        {0.0f, 0.0f, 1.0f, 1.0f}
+    };
+    auto triangle_renderable = Renderable(
+        {{static_cast<int>(sizeof(triangle)), triangle}, {static_cast<int>(sizeof(triangle_colors)), triangle_colors}},
+        _pipelineStateObjects.at("PC"),
+        3,
+        _device.get()
+        );
 
     const auto passDescriptor =NS::TransferPtr(MTL::RenderPassDescriptor::alloc()->init());
     passDescriptor->colorAttachments()->object(0)->setTexture(drawable->texture());
@@ -45,17 +84,86 @@ void renderer::update() const
 
     const auto encoder = buffer->renderCommandEncoder(passDescriptor.get());
 
+    auto positions_buffer =NS::TransferPtr( _device->newBuffer(triangle, sizeof(triangle), MTL::ResourceStorageModeShared));
+    auto colors_buffer = NS::TransferPtr(_device->newBuffer(triangle_colors, sizeof(triangle_colors), MTL::ResourceStorageModeShared));
+
+    /*
+    encoder->setRenderPipelineState(_PSOs.at("PC")->get_pso());
+    encoder->setVertexBuffer(positions_buffer.get(), 0, 0);
+    encoder->setVertexBuffer(colors_buffer.get(), 0, 1);
+    auto mvp = simd::float4x4(1.0f);
+    auto mvp_buffer = NS::TransferPtr(_device->newBuffer(&mvp, sizeof(mvp), MTL::ResourceStorageModeShared));
+    encoder->setVertexBuffer(mvp_buffer.get(), 0, 30);
+
+    encoder->drawPrimitives(
+        MTL::PrimitiveType::PrimitiveTypeTriangle,
+        NS::UInteger(0),
+        NS::UInteger(3));
+    */
+    triangle_renderable.render(encoder, simd::float4x4(1.0f));
+
+    // render all the renderable
+    for (const auto renderable : _renderables)
+    {
+        renderable->render(encoder, simd::float4x4(1.0f));
+    }
+
     encoder->endEncoding();
 
     buffer->presentDrawable(drawable);
     buffer->commit();
 }
 
-renderer::~renderer()
+Renderer::~Renderer()
 {
     std::cout << "renderer::~renderer()" << std::endl;
     std::cout << "Calling SDL_DestroyRenderer" << std::endl;
-    
-    SDL_DestroyRenderer(sdl_renderer);
+    SDL_DestroyRenderer(_sdl_renderer);
+    std::cout << "SDL_DestroyRenderer call ended" << std::endl;
 }
+
+void Renderer::loadPSOs(const std::vector<PSOConfig>& psoConfigs)
+{
+    for (const auto& config : psoConfigs)
+    {
+        createPSO(config);
+    }
+}
+
+void Renderer::createPSO(const PSOConfig& config)
+{
+    try
+    {
+        _pipelineStateObjects.emplace(
+            config.name,
+            std::make_shared<PipelineStateObject>(
+                config.name, config.vertexShader, config.fragmentShader, _device.get(), _library.get(), _layer->pixelFormat(), vertexDescriptors.at(config.vertexDescriptor)
+                ));
+    } catch (const std::exception& e)
+    {
+        std::cerr << e.what() << std::endl;
+    }
+}
+
+void Renderer::setupVertexDescriptors()
+{
+    auto p = NS::TransferPtr(MTL::VertexDescriptor::alloc()->init());
+    p->attributes()->object(0)->setFormat(MTL::VertexFormatFloat3);
+    p->attributes()->object(0)->setOffset(0);
+    p->attributes()->object(0)->setBufferIndex(0);
+    p->layouts()->object(0)->setStride(sizeof(simd::float3));
+    vertexDescriptors.emplace(P, p);
+
+    auto pc = NS::TransferPtr(MTL::VertexDescriptor::alloc()->init());
+    pc->attributes()->object(0)->setFormat(MTL::VertexFormatFloat3);
+    pc->attributes()->object(0)->setOffset(0);
+    pc->attributes()->object(0)->setBufferIndex(0);
+    pc->attributes()->object(1)->setFormat(MTL::VertexFormatFloat4);
+    pc->attributes()->object(1)->setOffset(0);
+    pc->attributes()->object(1)->setBufferIndex(1);
+    pc->layouts()->object(0)->setStride(sizeof(simd::float3));
+    pc->layouts()->object(1)->setStride(sizeof(simd::float4));
+    vertexDescriptors.emplace(PC, pc);
+}
+
 
