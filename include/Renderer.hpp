@@ -12,7 +12,6 @@
 #include <QuartzCore/QuartzCore.hpp>
 #include <iostream>
 #include <PipelineStateObject.hpp>
-#include <GlobalEnums.hpp>
 #include <PSOConfigs.hpp>
 #include <Renderable.hpp>
 
@@ -32,7 +31,7 @@ public:
     Renderer& operator=(Renderer&&) = delete;
 
     // map name to actual vertex descriptors
-    std::unordered_map<VertexDescriptor, NS::SharedPtr<MTL::VertexDescriptor>> vertexDescriptors;
+    //std::unordered_map<VertexDescriptor, NS::SharedPtr<MTL::VertexDescriptor>> vertexDescriptors;
 private:
     NS::SharedPtr<MTL::Device> _device;
     CA::MetalLayer* _layer;
@@ -43,9 +42,9 @@ private:
 
     SDL_Renderer* _sdl_renderer;
 
+    // pso related functions
     void loadPSOs(const std::vector<PSOConfig>& psoConfigs);
     void createPSO(const PSOConfig& config);
-    void setupVertexDescriptors();
 };
 
 #endif //RENDERER_HPP

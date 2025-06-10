@@ -10,6 +10,7 @@
 #include <iostream>
 #include <set>
 
+#include "AssimpRenderableLoader.hpp"
 #include "Renderable.hpp"
 
 using MTL::PrimitiveType;
@@ -43,11 +44,14 @@ Renderer::Renderer(SDL_Window* sdl_window, std::unique_ptr<IRenderableLoader> re
 
     _pipelineStateObjects = std::unordered_map<std::string, std::shared_ptr<PipelineStateObject>>();
 
-    setupVertexDescriptors();
     loadPSOs(psoConfigs);
 
-    //createPSO("triangle_pso", "vertexShader", "fragmentShader", P);
-    //createPSO("PC", "vertexColorShader", "fragmentColorShader", PC);
+    // try loading an assimp asset
+    auto monkey = _renderableLoader->loadRenderable(
+        NS::Bundle::mainBundle()->resourcePath()->stringByAppendingString(NS::String::string("/monkey.obj", NS::ASCIIStringEncoding))->utf8String(),
+        _pipelineStateObjects.at("PC"),
+        _device.get()
+        );
 }
 
 // rendering loop
@@ -137,33 +141,12 @@ void Renderer::createPSO(const PSOConfig& config)
         _pipelineStateObjects.emplace(
             config.name,
             std::make_shared<PipelineStateObject>(
-                config.name, config.vertexShader, config.fragmentShader, _device.get(), _library.get(), _layer->pixelFormat(), vertexDescriptors.at(config.vertexDescriptor)
-                ));
+                config.name, config.vertexShader, config.fragmentShader, _device.get(), _library.get(), _layer->pixelFormat(), config.vertexDescriptor)
+                );
     } catch (const std::exception& e)
     {
         std::cerr << e.what() << std::endl;
     }
-}
-
-void Renderer::setupVertexDescriptors()
-{
-    auto p = NS::TransferPtr(MTL::VertexDescriptor::alloc()->init());
-    p->attributes()->object(0)->setFormat(MTL::VertexFormatFloat3);
-    p->attributes()->object(0)->setOffset(0);
-    p->attributes()->object(0)->setBufferIndex(0);
-    p->layouts()->object(0)->setStride(sizeof(simd::float3));
-    vertexDescriptors.emplace(P, p);
-
-    auto pc = NS::TransferPtr(MTL::VertexDescriptor::alloc()->init());
-    pc->attributes()->object(0)->setFormat(MTL::VertexFormatFloat3);
-    pc->attributes()->object(0)->setOffset(0);
-    pc->attributes()->object(0)->setBufferIndex(0);
-    pc->attributes()->object(1)->setFormat(MTL::VertexFormatFloat4);
-    pc->attributes()->object(1)->setOffset(0);
-    pc->attributes()->object(1)->setBufferIndex(1);
-    pc->layouts()->object(0)->setStride(sizeof(simd::float3));
-    pc->layouts()->object(1)->setStride(sizeof(simd::float4));
-    vertexDescriptors.emplace(PC, pc);
 }
 
 
