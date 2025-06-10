@@ -2,31 +2,32 @@
 // Created by Giovanni Bollati on 13/03/25.
 //
 
-#include "../include/pso.hpp"
+#include "../include/PipelineStateObject.hpp"
 #include <iostream>
 #include <string>
+#include "VertexDescriptorUtils.hpp"
 
 PipelineStateObject::PipelineStateObject(
     const std::string& name,
-    const std::string& vertexName,
-    const std::string& fragmentName,
+    const std::string& vertexFunctionName,
+    const std::string& fragmentFunctionName,
     MTL::Device* device,
     MTL::Library* library,
     MTL::PixelFormat pixelFormat,
-    MTL::VertexDescriptor* vertexDescriptor
+    const VertexDescriptor& vertexDescriptor
     )
 {
     _vertexF = NS::TransferPtr(library->newFunction(
-        NS::String::string(vertexName.c_str(), NS::ASCIIStringEncoding)));
+        NS::String::string(vertexFunctionName.c_str(), NS::ASCIIStringEncoding)));
     if (!_vertexF)
     {
-        throw std::runtime_error("Failed to create vertex function with name: " + vertex_name);
+        throw std::runtime_error("Failed to create vertex function with name: " + vertexFunctionName);
     }
     _fragmentF = NS::TransferPtr(library->newFunction(
-        NS::String::string(fragmentName.c_str(), NS::ASCIIStringEncoding)));
+        NS::String::string(fragmentFunctionName.c_str(), NS::ASCIIStringEncoding)));
     if (!_fragmentF)
     {
-        throw std::runtime_error("Failed to create fragment function with name: " + fragment_name);
+        throw std::runtime_error("Failed to create fragment function with name: " + fragmentFunctionName);
     }
 
     auto psoDescriptor = NS::TransferPtr(MTL::RenderPipelineDescriptor::alloc()->init());
@@ -35,16 +36,14 @@ PipelineStateObject::PipelineStateObject(
         throw std::runtime_error("Failed to create pipeline descriptor");
     }
 
-    if (vertexDescriptor)
-    {
-        psoDescriptor->setVertexDescriptor(vertexDescriptor);
-        _vertexDescriptor = NS::TransferPtr(vertexDescriptor);
-    }
+
+    psoDescriptor->setVertexDescriptor(createVertexDescriptor(vertexDescriptor).get());
+    _vertexDescriptor = vertexDescriptor;
 
     psoDescriptor->setLabel(NS::String::string(name.c_str(), NS::ASCIIStringEncoding));
     psoDescriptor->setVertexFunction(_vertexF.get());
     psoDescriptor->setFragmentFunction(_fragmentF.get());
-    psoDescriptor->colorAttachments()->object(0)->setPixelFormat(pixel_format);
+    psoDescriptor->colorAttachments()->object(0)->setPixelFormat(pixelFormat);
 
     NS::Error* error;
     _metalPSO = NS::TransferPtr(device->newRenderPipelineState(psoDescriptor.get(), &error));
