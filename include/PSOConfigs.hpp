@@ -5,8 +5,7 @@
 #ifndef PSOCONFIG_HPP
 #define PSOCONFIG_HPP
 #include <string>
-
-#include "GlobalEnums.hpp"
+#include <VertexDescriptor.hpp>
 
 struct PSOConfig
 {
