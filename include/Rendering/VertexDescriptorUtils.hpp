@@ -8,6 +8,9 @@
 #include "VertexDescriptor.hpp"
 #include <Metal/MTLVertexDescriptor.hpp>
 
-NS::SharedPtr<MTL::VertexDescriptor> createVertexDescriptor(const VertexDescriptor& vertexDescriptor);
+namespace Rendering
+{
+    NS::SharedPtr<MTL::VertexDescriptor> createVertexDescriptor(const VertexDescriptor& vertexDescriptor);
+}
 
 #endif //VERTEXDESCRIPTORUTILS_HPP
