@@ -9,9 +9,9 @@ enable_language(Metal)
 
 set(CMAKE_CXX_STANDARD 20)
 
-file(GLOB SOURCE_FILES src/*.cpp)
-file(GLOB HEADER_FILES include/*.hpp)
-file(GLOB RESOURCES resources/*)
+file(GLOB_RECURSE SOURCE_FILES src/*.cpp)
+file(GLOB_RECURSE HEADER_FILES include/*.hpp)
+file(GLOB_RECURSE RESOURCES resources/*)
 set_source_files_properties(${RESOURCES} PROPERTIES HEADER_FILE_ONLY TRUE)
 set_source_files_properties(${RESOURCES}
        PROPERTIES
@@ -37,6 +37,7 @@ add_custom_command(TARGET main POST_BUILD
 
 find_package(SDL2 REQUIRED)
 add_subdirectory(assimp)
+add_subdirectory(glm)
 
 target_include_directories(main PUBLIC
         ./include
@@ -51,6 +52,7 @@ target_link_libraries(main PRIVATE
         "-framework AppKit"
         SDL2::SDL2
         assimp::assimp
+        glm::glm
 )
 
 set_target_properties(main PROPERTIES
