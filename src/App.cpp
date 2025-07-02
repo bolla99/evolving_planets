@@ -14,8 +14,10 @@
 
 #include <glm/glm.hpp>
 #include <Apple/Util.hpp>
-
 #include "TrackballCamera.hpp"
+#include "glm/gtc/type_ptr.hpp"
+#include <Rendering/UI/UIManager.hpp>
+#include <Rendering/UI/UIRenderer.hpp>
 
 
 // app constructor initialize sdl, create a window and try to
@@ -36,7 +38,7 @@ App::App(
         SDL_WINDOWPOS_CENTERED,
         width,
         height,
-        SDL_WINDOW_METAL
+        SDL_WINDOW_METAL | SDL_WINDOW_RESIZABLE
         );
     if (!_window)
     {
@@ -70,21 +72,50 @@ App::~App()
 App& App::init()
 {
     std::cout << "app::init()" << std::endl;
+    int w, h;
+    SDL_GetWindowSize(_window, &w, &h);
+    SDL_Log("WINDOW SIZE: %d x %d", w, h);
+    SDL_GetWindowSizeInPixels(_window, &w, &h);
+    SDL_Log("WINDOW SIZE in PIXELS: %d x %d", w, h);
 
     // load a mesh from file and add it to the renderer
-    auto meshLoader = AssimpMeshLoader();
+    auto meshLoader = std::make_unique<AssimpMeshLoader>();
+
     try
     {
         std::shared_ptr<Mesh> mesh;
         try
         {
-            mesh = meshLoader.loadMesh(Apple::resourcePath("monkey.obj"));
+            mesh = meshLoader->loadMesh(Apple::resourcePath("textured_cube.fbx"));
         }
         catch (const std::exception& e)
         {
             std::cerr << "Error loading mesh: " << e.what() << std::endl;
         }
-        _renderer->addRenderable(*mesh, Rendering::psoConfigs.at("VCPHONG"));
+        try
+        {
+            auto texture = Texture::fromFile(Apple::resourcePath("cube_texture.png"));
+            //auto text = Texture::fromText("cane peloso", 30, {0.5f, 0.5f, 0.5f, 1.0f});
+            _renderer->addRenderable(
+                *mesh,
+                Rendering::psoConfigs.at("TexturePHONG"), {texture});
+
+            float pos[3] = {100.0f, 100.0f, 0.0f};
+            glm::vec4 color = {1.0f, 0.0f, 0.0f, 1.0f};
+            /*auto textBox = Mesh::quad(
+                pos,
+                text->width(), text->height(),
+                glm::value_ptr(color), 1.0f);
+            _renderer->addRenderable(
+                *textBox,
+                Rendering::psoConfigs.at("TextureUI"), {text}
+                );*/
+        }
+        catch (const std::exception& e)
+        {
+            std::cerr << "Error loading texture: " << e.what() << std::endl;
+            std::terminate();
+        }
     }
     catch (const std::exception& e)
     {
@@ -115,6 +146,13 @@ App& App::run()
     std::cout << "app::run()" << std::endl;
     auto trackballCamera = static_cast<TrackballCamera*>(_camera.get());
 
+    auto ui = std::make_unique<Rendering::UI::UIManager>(
+        std::make_unique<Rendering::UI::UIRenderer>(
+            _renderer.get(),
+            Rendering::psoConfigs.at("UI"),
+            Rendering::UI::UIWindowStyle::defaultStyle())
+        );
+
     SDL_Event event;
     auto running = true;
     auto lastTime = SDL_GetTicks();
@@ -129,6 +167,7 @@ App& App::run()
 
         while (SDL_PollEvent(&event))
         {
+            if (ui->processInput(event)) continue;
             if (event.type == SDL_QUIT)
             {
                 running = false;
@@ -157,6 +196,19 @@ App& App::run()
         {
             trackballCamera->zoom(12.0f * deltaTime);
         }
+
+        ui->clear();
+
+        ui->beginWindow("Cane");
+        ui->text("Ciao, sono un cane peloso");
+        ui->text("triceratopo");
+        ui->endWindow();
+
+        ui->beginWindow("Cane maremmano");
+        ui->text("Ciao, sono un cane maremmano");
+        ui->endWindow();
+
+        ui->update();
         _renderer->update(_camera->getViewMatrix());
     }
     SDL_DestroyWindow(_window);
