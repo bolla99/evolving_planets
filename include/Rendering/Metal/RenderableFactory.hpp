@@ -13,7 +13,11 @@ namespace Rendering::Metal
     class RenderableFactory : public IRenderableFactory {
     public:
         RenderableFactory() = default;
-        std::shared_ptr<IRenderable> fromMesh(const Mesh& mesh, std::shared_ptr<IPSO> pso) override
+        std::shared_ptr<IRenderable> fromMesh(
+            const Mesh& mesh,
+            std::shared_ptr<IPSO> pso,
+            const std::vector<std::shared_ptr<Texture>>& textures
+            ) override
         {
             // cast IPSO to MetalPSO
             auto metalPSO = std::dynamic_pointer_cast<PSO>(pso);
@@ -34,6 +38,7 @@ namespace Rendering::Metal
                 auto attribute = vd.buffers[i][0];
                 if (mesh.HasAttribute(attribute.name))
                 {
+                    /*
                     if (attribute.name == Core::VertexAttributeName::Normal)
                     {
                         SDL_Log("Normal attribute found.");
@@ -50,6 +55,7 @@ namespace Rendering::Metal
                     {
                         SDL_Log("Unknown attribute found: %s", std::to_string(attribute.name).c_str());
                     }
+                    */
 
                     std::vector<float> attributeDataFloat;
                     auto attributeData = mesh.getAttributeData(attribute.name);
@@ -78,6 +84,10 @@ namespace Rendering::Metal
                     {
                         data.emplace_back(attributeDataFloat);
                     }
+                    else if (attribute.type == Core::Float2)
+                    {
+                        data.emplace_back(attributeDataFloat);
+                    }
                     else
                     {
                         throw std::runtime_error("Unsupported vertex attribute type: " + std::to_string(attribute.type));
@@ -91,14 +101,15 @@ namespace Rendering::Metal
                     throw std::runtime_error("Mesh does not have the required attribute: " + std::to_string(vd.buffers[i][0].name));
                 }
             }
-            SDL_Log("Renderable Factory: calling Renderable constructor.");
+            //SDL_Log("Renderable Factory: calling Renderable constructor.");
             return std::make_shared<Renderable>(
                 data,
                 mesh.getFacesData(),
                 bufferIndices,
                 metalPSO,
                 mesh.getNumVertices(),
-                mesh.getNumFaces()
+                mesh.getNumFaces(),
+                textures
                 );
         }
     };

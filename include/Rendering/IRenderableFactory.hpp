@@ -4,7 +4,9 @@
 
 #ifndef IRENDERABLEFACTORY_HPP
 #define IRENDERABLEFACTORY_HPP
-#include "IRenderable.hpp"
+
+#include <Rendering/IRenderable.hpp>
+#include <Texture.hpp>
 
 namespace Rendering
 {
@@ -12,7 +14,11 @@ namespace Rendering
     {
     public:
         virtual ~IRenderableFactory() = default;
-        virtual std::shared_ptr<IRenderable> fromMesh(const Mesh& mesh, std::shared_ptr<IPSO> pso) = 0;
+        virtual std::shared_ptr<IRenderable> fromMesh(
+            const Mesh& mesh,
+            std::shared_ptr<IPSO> pso,
+            const std::vector<std::shared_ptr<Texture>>& textures
+            ) = 0;
     };
 }
 

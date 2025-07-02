@@ -19,7 +19,8 @@ namespace Rendering::Metal
         const std::vector<int>& bufferIndices,
         const std::shared_ptr<PSO>& pso,
         int verticesCount,
-        int facesCount
+        int facesCount,
+        const std::vector<std::shared_ptr<Texture>>& textures
         ) : IRenderable(
             pso,
             verticesCount,
@@ -51,7 +52,44 @@ namespace Rendering::Metal
         {
             throw std::runtime_error("Buffer indices size does not match buffers size");
         }
-        SDL_Log("Renderable successfully created with %d buffers and %d faces", static_cast<int>(_buffers.size()), static_cast<int>(faces.size()));
+
+        // set textures
+        if (!textures.empty())
+        {
+            std::cout << "Creating textures for renderable" << std::endl;
+            for (const auto& t : textures)
+            {
+                auto tDesc = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
+                tDesc->setTextureType(MTL::TextureType2D);
+                switch (t->format())
+                {
+                    case PixelFormat::R8:
+                        tDesc->setPixelFormat(MTL::PixelFormatR8Unorm);
+                        break;
+                    case PixelFormat::RGB8:
+                        throw std::runtime_error("RGB8 format is not supported in Metal, use RGBA8 instead");
+                    case PixelFormat::RGBA8:
+                        tDesc->setPixelFormat(MTL::PixelFormatRGBA8Unorm);
+                        break;
+                    default:
+                        throw std::runtime_error("Unsupported texture format");
+                }
+                tDesc->setWidth(t->width());
+                tDesc->setHeight(t->height());
+                tDesc->setStorageMode(MTL::StorageModeShared);
+                tDesc->setUsage(MTL::TextureUsageShaderRead);
+
+                auto metalTexture = NS::TransferPtr(rawPSO->device()->newTexture(tDesc.get()));
+                metalTexture->replaceRegion(
+                                            MTL::Region::Make2D(0, 0, t->width(), t->height()),
+                                            0,
+                                            t->getData().data(),
+                                            t->bytesPerPixel() * t->width()
+                                            );
+                _textures.push_back(metalTexture);
+            }
+        }
+        //SDL_Log("Renderable successfully created with %d buffers and %d faces", static_cast<int>(_buffers.size()), static_cast<int>(faces.size()));
     }
 
     void Renderable::render(ICommandEncoder* commandEncoder, const glm::mat4x4& viewProjectionMatrix) const
@@ -71,10 +109,17 @@ namespace Rendering::Metal
             static_cast<MTL::RenderCommandEncoder*>(commandEncoder->raw())->setVertexBuffer(_buffers[i].get(), 0, _bufferIndices[i]);
         }
 
+        for (int i = 0; i < _textures.size(); i++)
+        {
+            //SDL_Log("Setting Texture");
+            // set textures
+            metalCommandEncoder->setFragmentTexture(_textures[i].get(), i);
+        }
+
         // Set MVP Matrix
         auto mvp = viewProjectionMatrix * _modelMatrix;
-        auto mvpBuffer = NS::TransferPtr(metalCommandEncoder->device()->newBuffer(glm::value_ptr(mvp), 64, MTL::ResourceStorageModeShared));
-        metalCommandEncoder->setVertexBuffer(mvpBuffer.get(), 0, 30);
+        auto mvpBuffer = NS::TransferPtr(metalCommandEncoder->device()->newBuffer(glm::value_ptr(_modelMatrix), 64, MTL::ResourceStorageModeShared));
+        metalCommandEncoder->setVertexBuffer(mvpBuffer.get(), 0, 29);
 
         metalCommandEncoder->drawIndexedPrimitives(
             MTL::PrimitiveType::PrimitiveTypeTriangle,
@@ -85,3 +130,4 @@ namespace Rendering::Metal
             );
     };
 }
+
