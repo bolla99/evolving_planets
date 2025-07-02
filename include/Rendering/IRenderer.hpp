@@ -4,6 +4,8 @@
 
 #ifndef IRENDERER_HPP
 #define IRENDERER_HPP
+
+#include <string>
 #include <Rendering/PSOConfigs.hpp>
 #include <Mesh.hpp>
 
@@ -14,8 +16,19 @@
 
 #include <Rendering/Lights.hpp>
 
+using RenderableID = uint64_t;
+
 namespace Rendering
 {
+    enum class RenderLayer
+    {
+        BACKGROUND,
+        OPAQUE,
+        TRANSPARENT,
+        UI,
+        TEXT
+    };
+
     class IRenderer
     {
     public:
@@ -26,7 +39,9 @@ namespace Rendering
             _psoFactory(std::move(psoFactory)),
             _renderableFactory(std::move(renderableFactory)),
             _pipelineStateObjects(std::unordered_map<std::string, std::shared_ptr<IPSO>>()),
-            _renderables(std::vector<std::shared_ptr<IRenderable>>()),
+            _nextRenderableID(0),
+            _freeIDs(std::vector<RenderableID>()),
+            _renderables(std::array<std::unordered_map<RenderableID, std::shared_ptr<IRenderable>>, 5>()),
             _lights(Lights{})
         {}
 
@@ -47,7 +62,13 @@ namespace Rendering
         void setAmbientGlobalLight(const glm::vec4& color);
         void setLights(const Lights& lights);
 
-        void addRenderable(const Mesh& mesh, const PSOConfig& psoConfig);
+        uint64_t addRenderable(
+            const Mesh& mesh,
+            const PSOConfig& psoConfig,
+            const std::vector<std::shared_ptr<Texture>>& textures,
+            RenderLayer layer = RenderLayer::OPAQUE
+            );
+        std::shared_ptr<IRenderable> removeRenderable(uint64_t index);
         void loadPSOs(const std::unordered_map<std::string, const PSOConfig>& psoConfigs);
         void loadPSO(const PSOConfig& config);
 
@@ -57,7 +78,10 @@ namespace Rendering
         std::unique_ptr<IRenderableFactory> _renderableFactory;
 
         std::unordered_map<std::string, std::shared_ptr<IPSO>> _pipelineStateObjects;
-        std::vector<std::shared_ptr<IRenderable>> _renderables;
+
+        RenderableID _nextRenderableID;
+        std::vector<RenderableID> _freeIDs;
+        std::array<std::unordered_map<RenderableID, std::shared_ptr<IRenderable>>, 5> _renderables;
 
         Lights _lights; // global lights structure, can be used by the renderables
     };

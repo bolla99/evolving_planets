@@ -6,12 +6,18 @@
 #include <Rendering/IRenderer.hpp>
 #include <Mesh.hpp>
 #include <ranges>
+#include <string>
 
 namespace Rendering
 {
-    void IRenderer::addRenderable(const Mesh& mesh, const PSOConfig& psoConfig)
+    uint64_t IRenderer::addRenderable(
+        const Mesh& mesh,
+        const PSOConfig& psoConfig,
+        const std::vector<std::shared_ptr<Texture>>& textures,
+        RenderLayer layer
+    )
     {
-        if (_pipelineStateObjects.find(psoConfig.name) == _pipelineStateObjects.end())
+        if (_pipelineStateObjects.contains(psoConfig.name))
         {
             try
             {
@@ -29,16 +35,43 @@ namespace Rendering
         // create the renderable from the mesh and the pso
         try
         {
-            auto renderable = _renderableFactory->fromMesh(mesh, _pipelineStateObjects.at(psoConfig.name));
+            auto renderable = _renderableFactory->fromMesh(mesh, _pipelineStateObjects.at(psoConfig.name), textures);
             if (!renderable)
             {
                 throw std::runtime_error("Failed to create renderable from mesh");
             }
-            _renderables.push_back(renderable);
+            // check if we have a free ID to recycle
+            uint64_t id = 0;
+            if (!_freeIDs.empty())
+            {
+                id = _freeIDs.back();
+                _freeIDs.pop_back(); // recycle the ID
+            } else {
+                id = _nextRenderableID++;
+            }
+            _renderables[static_cast<int>(layer)].emplace(
+                id,
+                renderable);
+            return id; // return the index of the added renderable
         } catch (const std::exception& e)
         {
             std::cerr << "Error creating renderable from mesh: " << e.what() << std::endl;
             throw std::runtime_error("Failed to create renderable from mesh");
+        }
+    }
+
+    std::shared_ptr<IRenderable> IRenderer::removeRenderable(uint64_t index)
+    {
+        for (auto& layer : _renderables)
+        {
+            if (layer.contains(index))
+            {
+                auto renderable = layer[index];
+                layer.erase(index);
+                // recycle the ID
+                _freeIDs.push_back(index);
+                return renderable;
+            }
         }
     }
 

@@ -8,6 +8,7 @@
 #include <Metal/Metal.hpp>
 #include <QuartzCore/QuartzCore.hpp>
 #include <iostream>
+#include <ranges>
 #include <set>
 
 #include <Rendering/Metal/CommandEncoder.hpp>
@@ -56,7 +57,9 @@ namespace Rendering::Metal
 
         _layer->setDevice(_device.get());
         _layer->setPixelFormat(MTL::PixelFormatBGRA8Unorm);
-
+        
+        auto drawableSize = _layer->drawableSize();
+        SDL_Log("DRAWABLE SIZE: %f x %f", drawableSize.width, drawableSize.height);
         loadPSOs(psoConfigs);
     }
 
@@ -104,6 +107,16 @@ namespace Rendering::Metal
         auto depthStencilState = NS::TransferPtr(_device->newDepthStencilState(depthStencilDescriptor.get()));
 
         encoder->setDepthStencilState(depthStencilState.get());
+
+        // set sampler
+        auto samplerDescriptor = NS::TransferPtr(MTL::SamplerDescriptor::alloc()->init());
+        samplerDescriptor->setMinFilter(MTL::SamplerMinMagFilter::SamplerMinMagFilterLinear);
+        samplerDescriptor->setMagFilter(MTL::SamplerMinMagFilter::SamplerMinMagFilterLinear);
+        samplerDescriptor->setSAddressMode(MTL::SamplerAddressMode::SamplerAddressModeClampToZero);
+        samplerDescriptor->setTAddressMode(MTL::SamplerAddressMode::SamplerAddressModeClampToZero);
+        samplerDescriptor->setNormalizedCoordinates(true);
+        auto sampler = NS::TransferPtr(encoder->device()->newSamplerState(samplerDescriptor.get()));
+        encoder->setFragmentSamplerState(sampler.get(), 0);
         
 
         // set lights
@@ -115,20 +128,59 @@ namespace Rendering::Metal
         encoder->setVertexBuffer(
             lightsBuffer.get(),
             0,
-            29 // buffer index 1
+            28 // buffer index 1
         );
-        
+
+        // SET DRAWABLE SIZE BUFFER
+        float drawableSize[2] = {
+            (float)drawable->texture()->width(),
+            (float)drawable->texture()->height()
+        };
+        auto drawableSizeBuffer = NS::TransferPtr(_device->newBuffer(
+            &drawableSize,
+            2 * sizeof(float),
+            MTL::ResourceStorageModeShared
+        ));
+        encoder->setVertexBuffer(
+            drawableSizeBuffer.get(),
+            0,
+            20 // buffer index 2
+        );
+
 
         const auto viewProjectionMatrix = glm::perspective(
             glm::radians(55.0f),
-            800.0f / 600.0f,
+            (float)drawable->texture()->width() / (float)drawable->texture()->height(),
             0.1f,
             1000.0f) * viewMatrix;
+
+        encoder->setVertexBytes(
+            &viewProjectionMatrix,
+            sizeof(viewProjectionMatrix),
+            30 // vertex buffer index 0
+        );
 
         auto rce = CommandEncoder(encoder);
 
         // render the renderables
-        for (const auto& renderable : _renderables)
+        //std::cout << "Rendering " << _renderables.size() << " renderables." << std::endl;
+        for (const auto& renderable : _renderables[static_cast<int>(RenderLayer::BACKGROUND)] | std::views::values)
+        {
+            renderable->render(&rce, viewProjectionMatrix);
+        }
+        for (const auto& renderable : _renderables[static_cast<int>(RenderLayer::OPAQUE)] | std::views::values)
+        {
+            renderable->render(&rce, viewProjectionMatrix);
+        }
+        for (const auto& renderable : _renderables[static_cast<int>(RenderLayer::TRANSPARENT)] | std::views::values)
+        {
+            renderable->render(&rce, viewProjectionMatrix);
+        }
+        for (const auto& renderable : _renderables[static_cast<int>(RenderLayer::UI)] | std::views::values)
+        {
+            renderable->render(&rce, viewProjectionMatrix);
+        }
+        for (const auto& renderable : _renderables[static_cast<int>(RenderLayer::TEXT)] | std::views::values)
         {
             renderable->render(&rce, viewProjectionMatrix);
         }
