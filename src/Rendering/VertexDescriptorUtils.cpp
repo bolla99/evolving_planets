@@ -40,6 +40,10 @@ namespace Rendering
                     cumulativeStride += sizeof(simd::float4);
                     mtlVertexDescriptor->attributes()->object(attribute.attributeIndex)->setFormat(MTL::VertexFormatFloat4);
                     break;
+                case VertexAttributeType::Float2:
+                    cumulativeStride += sizeof(simd::float2);
+                    mtlVertexDescriptor->attributes()->object(attribute.attributeIndex)->setFormat(MTL::VertexFormatFloat2);
+                    break;
                 default:
                     throw std::runtime_error("Unsupported vertex attribute type");
                 }}
