@@ -9,6 +9,8 @@
 #include <vector>
 #include <Core/VertexAttributeEnums.hpp>
 
+#include "glm/vec4.hpp"
+
 class Mesh
 {
 public:
@@ -32,6 +34,14 @@ public:
 
     [[nodiscard]] int getNumVertices() const { return _numVertices; }
     [[nodiscard]] int getNumFaces() const { return _numFaces; }
+
+    static std::shared_ptr<Mesh> quad(
+        const float* pos, float w, float h, const float* color, float uvWidth, float uvHeight
+        );
+    static glm::vec4 noVertexColor()
+    {
+        return {1.0f, 0.0f, 1.0f, 1.0f};
+    }
 
 
 private:
