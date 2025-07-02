@@ -41,7 +41,19 @@ namespace Rendering::Metal
         psoDescriptor->setVertexFunction(_vertexF.get());
         psoDescriptor->setFragmentFunction(_fragmentF.get());
         psoDescriptor->colorAttachments()->object(0)->setPixelFormat(pixelFormat);
+
         psoDescriptor->setDepthAttachmentPixelFormat(MTL::PixelFormat::PixelFormatDepth32Float);
+
+
+        psoDescriptor->colorAttachments()->object(0)->setBlendingEnabled(YES);
+        psoDescriptor->colorAttachments()->object(0)->setRgbBlendOperation(MTL::BlendOperationAdd);
+        psoDescriptor->colorAttachments()->object(0)->setAlphaBlendOperation(MTL::BlendOperationAdd);
+        psoDescriptor->colorAttachments()->object(0)->setSourceRGBBlendFactor(MTL::BlendFactorSourceAlpha);
+        psoDescriptor->colorAttachments()->object(0)->setDestinationRGBBlendFactor(MTL::BlendFactorOneMinusSourceAlpha);
+        psoDescriptor->colorAttachments()->object(0)->setSourceAlphaBlendFactor(MTL::BlendFactorSourceAlpha);
+        psoDescriptor->colorAttachments()->object(0)->setDestinationAlphaBlendFactor(MTL::BlendFactorOneMinusSourceAlpha);
+        psoDescriptor->setSampleCount(1); // default sample count, can be changed later
+
 
         NS::Error* error;
         _metalPSO = NS::TransferPtr(device->newRenderPipelineState(psoDescriptor.get(), &error));
