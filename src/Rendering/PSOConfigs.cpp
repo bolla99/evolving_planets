@@ -4,6 +4,7 @@
 
 #include <Rendering/PSOConfigs.hpp>
 #include <Rendering/VertexDescriptor.hpp>
+#include <string>
 
 namespace Rendering
 {
@@ -47,6 +48,48 @@ namespace Rendering
                 Back,
                 Enabled,
                 G_getVertexDescriptors().at("PCN")
+            }
+        },
+        std::pair<std::string, const PSOConfig>{
+            std::string("UI"),
+            PSOConfig
+            {
+                "UI",
+                "vertexUI",
+                "fragmentUI",
+                Triangle,
+                Solid,
+                Back,
+                Enabled,
+                G_getVertexDescriptors().at("PC")
+            }
+        },
+        std::pair<std::string, const PSOConfig>{
+            std::string("TexturePHONG"),
+            PSOConfig
+            {
+                "TexturePHONG",
+                "vertexTexturePHONG",
+                "fragmentTexturePHONG",
+                Triangle,
+                Solid,
+                Back,
+                Enabled,
+                G_getVertexDescriptors().at("PCNUV")
+            }
+        },
+        std::pair<std::string, const PSOConfig>{
+            std::string("TextureUI"),
+            PSOConfig
+            {
+                "TextureUI",
+                "vertexTextureUI",
+                "fragmentTextureUI",
+                Triangle,
+                Solid,
+                Back,
+                Disabled,
+                G_getVertexDescriptors().at("PUV")
             }
         }
     };

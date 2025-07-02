@@ -55,6 +55,38 @@ namespace Rendering
                     }
                 }
             }
+        ),
+            std::make_pair<std::string, const VertexDescriptor>(
+                "PCNUV",
+                VertexDescriptor{
+                {
+                    {
+                        {Position, Float3, 0}
+                    },
+                    {
+                        {Color, Float4, 1}
+                    },
+                    {
+                        {Normal, Float3, 2}
+                    },
+                    {
+                        {TexCoord, Float2, 3}
+                    }
+                }
+            }
+        ),
+            std::make_pair<std::string, const VertexDescriptor>(
+                "PUV",
+                VertexDescriptor{
+                {
+                    {
+                        {Position, Float3, 0}
+                    },
+                    {
+                        {TexCoord, Float2, 1}
+                    }
+                }
+            }
         )
     };
         return vertexDescriptors;
