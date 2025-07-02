@@ -62,6 +62,17 @@ public:
                 std::memcpy(vertexData[i].data() + j * sizeof(float) * 4, &color, sizeof(float) * 4);
             }
             ++i;
+        } else
+        {
+            vertexAttributeNames.emplace_back(Core::VertexAttributeName::Color);
+            vertexAttributeTypes.emplace_back(Core::VertexAttributeType::Float4);
+            vertexData.emplace_back(numVertices * sizeof(float) * 4);
+            for (int j = 0; j < numVertices; ++j)
+            {
+                auto color = Mesh::noVertexColor();
+                std::memcpy(vertexData[i].data() + j * sizeof(float) * 4, &color, sizeof(float) * 4);
+            }
+            ++i;
         }
         if (mesh->HasNormals())
         {
@@ -122,14 +133,15 @@ public:
                 mesh->HasTangentsAndBitangents() ? "yes" : "no"
                 );
 
-        /*
-        // print faces
-        for (int i = 0; i < mesh->mNumFaces; ++i)
+        // get textures
+        if (scene->HasTextures())
         {
-            auto face = mesh->mFaces[i];
-            SDL_Log("Face %d: %d, %d\n", face.mIndices[0], face.mIndices[1], face.mIndices[2]);
+            SDL_Log("Mesh has textures, but this loader does not support them yet.");
         }
-        */
+        else
+        {
+            SDL_Log("Mesh has no textures.");
+        }
 
         return std::make_shared<Mesh>(
             numVertices,
