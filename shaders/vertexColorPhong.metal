@@ -25,10 +25,6 @@ struct PointLight {
     float4 color;
 };
 
-struct Uniforms {
-    float4x4 modelViewProjectionMatrix;
-};
-
 struct Lights {
     float4 globalAmbientLightColor;
     DirectionalLight directionalLights[MAX_DIRECTIONAL_LIGHTS];
@@ -42,11 +38,12 @@ struct Lights {
 
 vertex VertexOut vertexVCPHONG(
     VertexPCN vertexIn [[stage_in]],
-    constant Lights& lights [[buffer(29)]],
-    constant Uniforms& uniforms [[buffer(30)]]
+    constant Lights& lights [[buffer(28)]],
+    constant float4x4& modelMatrix [[buffer(29)]],
+    constant float4x4& viewProjectionMatrix [[buffer(30)]]
 ) {
     VertexOut vertexOut;
-    vertexOut.position = uniforms.modelViewProjectionMatrix * float4(vertexIn.position, 1.0f);
+    vertexOut.position = viewProjectionMatrix * modelMatrix * float4(vertexIn.position, 1.0f);
     vertexOut.color = vertexIn.color;
     
     // Calculate lighting

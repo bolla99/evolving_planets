@@ -11,16 +11,13 @@ struct VertexOut {
     float4 color;
 };
 
-struct Uniforms {
-    float4x4 modelViewProjectionMatrix;
-};
-
 vertex VertexOut vertexColorShader(
     Vertex vertexIn [[stage_in]],
-    constant Uniforms& uniforms [[buffer(30)]]
+    constant float4x4& modelMatrix [[buffer(29)]],
+    constant float4x4& viewProjectionMatrix [[buffer(30)]]
 ) {
     VertexOut vertexOut;
-    vertexOut.position = uniforms.modelViewProjectionMatrix * float4(vertexIn.position, 1.0f);
+    vertexOut.position = viewProjectionMatrix * modelMatrix * float4(vertexIn.position, 1.0f);
     vertexOut.color = vertexIn.color;
     return vertexOut;
 }
