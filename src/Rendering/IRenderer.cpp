@@ -151,4 +151,10 @@ namespace Rendering
     {
         _lights = lights;
     }
+
+    void IRenderer::setDebugUICallback(std::function<void()> callback)
+    {
+        _debugUICallback = std::move(callback);
+    }
+
 }

@@ -13,8 +13,9 @@
 #include <Rendering/IRenderableFactory.hpp>
 
 #include <glm/glm.hpp>
-
+#include <functional>
 #include <Rendering/Lights.hpp>
+
 
 using RenderableID = uint64_t;
 
@@ -42,7 +43,8 @@ namespace Rendering
             _nextRenderableID(0),
             _freeIDs(std::vector<RenderableID>()),
             _renderables(std::array<std::unordered_map<RenderableID, std::shared_ptr<IRenderable>>, 5>()),
-            _lights(Lights{})
+            _lights(Lights{}),
+            _debugUICallback([]() {})
         {}
 
         virtual ~IRenderer() = default;
@@ -72,6 +74,8 @@ namespace Rendering
         void loadPSOs(const std::unordered_map<std::string, const PSOConfig>& psoConfigs);
         void loadPSO(const PSOConfig& config);
 
+        void setDebugUICallback(std::function<void()> callback);
+
 
     protected:
         std::unique_ptr<IPSOFactory> _psoFactory;
@@ -84,6 +88,8 @@ namespace Rendering
         std::array<std::unordered_map<RenderableID, std::shared_ptr<IRenderable>>, 5> _renderables;
 
         Lights _lights; // global lights structure, can be used by the renderables
+
+        std::function<void()> _debugUICallback;
     };
 }
 

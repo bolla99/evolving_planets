@@ -17,6 +17,8 @@
 #include <Rendering/Metal/RenderableFactory.hpp>
 #include <Rendering/Metal/Util/Utils.hpp>
 
+#include "imgui_impl_metal.h"
+#include "imgui_impl_sdl2.h"
 #include "glm/ext/matrix_clip_space.hpp"
 #include "glm/ext/matrix_transform.hpp"
 
@@ -40,6 +42,10 @@ namespace Rendering::Metal
             throw std::runtime_error("Metal device passed to renderer constructor is null");
         }
         _device = device;
+
+        // INIT IMGUI METAL IMPL
+        ImGui_ImplMetal_Init(_device.get());
+
         if (!library)
         {
             throw std::runtime_error("Metal library passed to renderer constructor is null");
@@ -99,6 +105,10 @@ namespace Rendering::Metal
         // encoder ownership is never obtained
         // an eventual abstract wrapper should not take ownership of the encoder
         const auto encoder = buffer->renderCommandEncoder(passDescriptor.get());
+
+        ImGui_ImplMetal_NewFrame(passDescriptor.get());
+        ImGui_ImplSDL2_NewFrame();
+        ImGui::NewFrame();
 
         // set depth test
         auto depthStencilDescriptor = NS::TransferPtr(MTL::DepthStencilDescriptor::alloc()->init());
@@ -184,6 +194,17 @@ namespace Rendering::Metal
         {
             renderable->render(&rce, viewProjectionMatrix);
         }
+
+
+        _debugUICallback();
+
+        ImGui::Begin("Hello Cane");
+        ImGui::Text("CANE PELOSO");
+
+        ImGui::End();
+        ImGui::Render();
+        ImGui_ImplMetal_RenderDrawData(ImGui::GetDrawData(), buffer, encoder);
+
 
         encoder->endEncoding();
 
