@@ -9,7 +9,9 @@
 #include <vector>
 #include <Core/VertexAttributeEnums.hpp>
 
-#include "glm/vec4.hpp"
+#include "BSpline.hpp"
+#include "Planet.hpp"
+#include "glm/glm.hpp"
 
 class Mesh
 {
@@ -42,6 +44,26 @@ public:
     {
         return {1.0f, 0.0f, 1.0f, 1.0f};
     }
+
+    static std::shared_ptr<Mesh> fromBSpline(
+        const BSpline& curve,
+        float step,
+        const glm::vec4& color
+    );
+
+    static std::shared_ptr<Mesh> fromPolygon(
+        const std::vector<glm::vec3>& positions,
+        const glm::vec4& color = noVertexColor(),
+        bool addInnerVertices = true
+        );
+
+
+    static std::shared_ptr<Mesh> fromPlanet(
+        const Planet& planet,
+        const glm::vec4& color = noVertexColor(),
+        float samplingRes = 0.01f
+        );
+
 
 
 private:

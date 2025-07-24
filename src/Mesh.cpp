@@ -2,6 +2,7 @@
 // Created by Giovanni Bollati on 11/06/25.
 //
 #include "Mesh.hpp"
+#include <BSpline.hpp>
 
 
 
@@ -119,4 +120,218 @@ std::shared_ptr<Mesh> Mesh::quad(
     };
 
     return std::make_shared<Mesh>(4, 2, attributeNames, attributeTypes, vertexData, faces);
+}
+
+std::shared_ptr<Mesh> Mesh::fromBSpline(
+        const BSpline& curve,
+        float step,
+        const glm::vec4& color
+    )
+{
+    std::vector<Core::VertexAttributeName> attributeNames = {
+        Core::VertexAttributeName::Position,
+        Core::VertexAttributeName::Color
+    };
+    std::vector<Core::VertexAttributeType> attributeTypes = {
+        Core::VertexAttributeType::Float3,
+        Core::VertexAttributeType::Float4
+    };
+
+    auto positions = std::vector<glm::vec3>();
+    auto t = 0.0f;
+    while (t < 1.0f)
+    {
+        positions.push_back(curve.evaluate(t));
+        t += step; // increment by 0.01
+    }
+    auto lines = std::vector<glm::vec3>();
+    for (int i = 0; i < positions.size() - 1; ++i)
+    {
+        lines.push_back(positions[i]);
+        lines.push_back(positions[i + 1]);
+    }
+    auto colors = std::vector<glm::vec4>(lines.size());
+    for (int i = 0; i < colors.size(); ++i)
+    {
+        colors[i] = color; // purple color
+    }
+    std::vector<std::vector<uint8_t>> vertexData(2);
+    vertexData[0].resize(lines.size() * sizeof(glm::vec3));
+    std::memcpy(vertexData[0].data(), lines.data(), vertexData[0].size());
+    vertexData[1].resize(colors.size() * sizeof(glm::vec4));
+    std::memcpy(vertexData[1].data(), colors.data(), vertexData[1].size());
+    return std::make_shared<Mesh>(
+        static_cast<int>(lines.size()),
+        0,
+        attributeNames,
+        attributeTypes,
+        vertexData,
+        std::vector<uint32_t>() // no faces for lines
+    );
+}
+
+std::shared_ptr<Mesh> Mesh::fromPolygon(
+    const std::vector<glm::vec3>& positions,
+    const glm::vec4& color,
+    bool addInnerVertices
+    )
+{
+    std::vector<Core::VertexAttributeName> attributeNames = {
+        Core::VertexAttributeName::Position,
+        Core::VertexAttributeName::Color
+    };
+    std::vector<Core::VertexAttributeType> attributeTypes = {
+        Core::VertexAttributeType::Float3,
+        Core::VertexAttributeType::Float4
+    };
+
+    auto lines = std::vector<glm::vec3>();
+    for (int i = 0; i < positions.size() - 1; ++i)
+    {
+        lines.push_back(positions[i]);
+        if (addInnerVertices) lines.push_back(positions[i + 1]);
+    }
+    auto colors = std::vector<glm::vec4>(lines.size());
+    for (int i = 0; i < colors.size(); ++i)
+    {
+        colors[i] = color; // purple color
+    }
+    std::vector<std::vector<uint8_t>> vertexData(2);
+    vertexData[0].resize(lines.size() * sizeof(glm::vec3));
+    std::memcpy(vertexData[0].data(), lines.data(), vertexData[0].size());
+    vertexData[1].resize(colors.size() * sizeof(glm::vec4));
+    std::memcpy(vertexData[1].data(), colors.data(), vertexData[1].size());
+    return std::make_shared<Mesh>(
+        static_cast<int>(lines.size()),
+        0,
+        attributeNames,
+        attributeTypes,
+        vertexData,
+        std::vector<uint32_t>() // no faces for lines
+    );
+}
+
+
+std::shared_ptr<Mesh> Mesh::fromPlanet(
+    const Planet& planet,
+    const glm::vec4& color,
+    float samplingRes
+)
+{
+    int nU = static_cast<int>(1.0f / samplingRes) + 1; // non includo u=1, per periodicità
+    int nV = static_cast<int>(1.0f / samplingRes) + 1; // includo v=0 e v=1
+    std::vector<glm::vec3> vertices;
+    std::vector<glm::vec4> colors;
+    std::vector<glm::vec3> normals;
+    std::vector<uint32_t> indices;
+
+    // SOUTH POLE
+    glm::vec3 southPole = planet.evaluate(0.0f, 0.0f);
+    vertices.push_back(southPole);
+    colors.push_back(color);
+    // temporary init
+    normals.emplace_back(0.0f);
+    // Cintura centrale
+    // skip one ring of the plateau, connect only to the outer
+    for (int i = 1 + 1; i < nV - 1 - 1; ++i) { // +1 and -1 for first ring skip
+        float v = static_cast<float>(i) / static_cast<float>(nV - 1);
+        for (int j = 0; j < nU; ++j) {
+            float u = static_cast<float>(j) / static_cast<float>(nU); // u in [0, 1) -> for linking
+            vertices.push_back(planet.evaluate(u, v));
+            colors.push_back(color);
+            // temporary init
+            normals.emplace_back(0.0f);
+        }
+    }
+    // NORTH POLE
+    glm::vec3 northPole = planet.evaluate(0.0f, 1.0f);
+    vertices.push_back(northPole);
+    colors.push_back(color);
+    // temporary init
+    normals.emplace_back(0.0f);
+
+    // NORTH POLE FAN
+    uint32_t southPoleIdx = 0;
+    for (int j = 0; j < nU; ++j) {
+        uint32_t v1 = 1 + j;
+        uint32_t v2 = 1 + ((j + 1) % nU);
+        indices.push_back(southPoleIdx);
+        indices.push_back(v1);
+        indices.push_back(v2);
+        glm::vec3 n = glm::normalize(glm::cross(vertices[v1] - vertices[southPoleIdx], vertices[v2] - vertices[southPoleIdx]));
+        normals[southPoleIdx] = n;
+        normals[v1] = n;
+        normals[v2] = n;
+    }
+    // INNER PARALLELS
+    // additional -2 from nV for first ring skip
+    for (int i = 0; i < nV - 2 - 1 - 2; ++i) { // nV-2 parallels, -1 for avoiding overflow
+        for (int j = 0; j < nU; ++j) {
+            uint32_t row0 = 1 + i * nU;
+            uint32_t row1 = 1 + (i + 1) * nU;
+            uint32_t v0 = row0 + j;
+            uint32_t v1 = row0 + ((j + 1) % nU);
+            uint32_t v2 = row1 + j;
+            uint32_t v3 = row1 + ((j + 1) % nU);
+            // First Triangle
+            indices.push_back(v0);
+            indices.push_back(v2);
+            indices.push_back(v1);
+            glm::vec3 n1 = glm::normalize(glm::cross(vertices[v2] - vertices[v0], vertices[v1] - vertices[v0]));
+            normals[v0] += n1; normals[v0] = glm::normalize(normals[v0]);
+            normals[v2] += n1; normals[v1] = glm::normalize(normals[v1]);
+            normals[v1] += n1; normals[v2] = glm::normalize(normals[v2]);
+            // Second Triangle
+            indices.push_back(v1);
+            indices.push_back(v2);
+            indices.push_back(v3);
+            glm::vec3 n2 = glm::normalize(glm::cross(vertices[v2] - vertices[v1], vertices[v3] - vertices[v1]));
+            normals[v1] += n2; normals[v0] = glm::normalize(normals[v0]);
+            normals[v2] += n2; normals[v1] = glm::normalize(normals[v1]);
+            normals[v3] += n2; normals[v2] = glm::normalize(normals[v2]);
+        }
+    }
+    // Sud: fan
+    // -2 from nV for first ring skip
+    uint32_t northPoleIdx = static_cast<uint32_t>(vertices.size() - 1);
+    uint32_t lastRow = 1 + (nV - 3 - 2) * nU;
+    for (int j = 0; j < nU; ++j) {
+        uint32_t v1 = lastRow + j;
+        uint32_t v2 = lastRow + ((j + 1) % nU);
+        indices.push_back(v1);
+        indices.push_back(northPoleIdx);
+        indices.push_back(v2);
+        glm::vec3 n = glm::normalize(glm::cross(vertices[northPoleIdx] - vertices[v1], vertices[v2] - vertices[v1]));
+        normals[northPoleIdx] += n; normals[northPoleIdx] = glm::normalize(normals[northPoleIdx]);
+        normals[v1] += n; normals[v1] = glm::normalize(normals[v1]);
+        normals[v2] += n; normals[v2] = glm::normalize(normals[v2]);
+    }
+
+    // Attributi
+    std::vector<Core::VertexAttributeName> attributeNames = {
+        Core::VertexAttributeName::Position,
+        Core::VertexAttributeName::Color,
+        Core::VertexAttributeName::Normal
+    };
+    std::vector<Core::VertexAttributeType> attributeTypes = {
+        Core::VertexAttributeType::Float3,
+        Core::VertexAttributeType::Float4,
+        Core::VertexAttributeType::Float3
+    };
+    std::vector<std::vector<uint8_t>> vertexData(3);
+    vertexData[0].resize(vertices.size() * sizeof(glm::vec3));
+    std::memcpy(vertexData[0].data(), vertices.data(), vertexData[0].size());
+    vertexData[1].resize(colors.size() * sizeof(glm::vec4));
+    std::memcpy(vertexData[1].data(), colors.data(), vertexData[1].size());
+    vertexData[2].resize(normals.size() * sizeof(glm::vec3));
+    std::memcpy(vertexData[2].data(), normals.data(), vertexData[2].size());
+
+    return std::make_shared<Mesh>(
+        static_cast<int>(vertices.size()),
+        static_cast<int>(indices.size() / 3),
+        attributeNames,
+        attributeTypes,
+        vertexData,
+        indices
+    );
 }
