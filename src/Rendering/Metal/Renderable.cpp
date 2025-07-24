@@ -40,11 +40,14 @@ namespace Rendering::Metal
             auto metalBuffer = NS::TransferPtr(rawPSO->device()->newBuffer(buffer.data(), buffer.size() * sizeof(float), MTL::ResourceStorageModeShared));
             _buffers.push_back(metalBuffer);
         }
-        if (faces.empty())
+        if (faces.empty() && _pso->primitiveType == Triangle)
         {
             throw std::runtime_error("Faces data is empty");
         }
-        _facesBuffer = NS::TransferPtr(rawPSO->device()->newBuffer(faces.data(), faces.size() * sizeof(uint32_t), MTL::ResourceStorageModeShared));
+        if (_pso->primitiveType == Triangle)
+        {
+            _facesBuffer = NS::TransferPtr(rawPSO->device()->newBuffer(faces.data(), faces.size() * sizeof(uint32_t), MTL::ResourceStorageModeShared));
+        }
 
         _bufferIndices = bufferIndices;
 
@@ -121,13 +124,36 @@ namespace Rendering::Metal
         auto mvpBuffer = NS::TransferPtr(metalCommandEncoder->device()->newBuffer(glm::value_ptr(_modelMatrix), 64, MTL::ResourceStorageModeShared));
         metalCommandEncoder->setVertexBuffer(mvpBuffer.get(), 0, 29);
 
-        metalCommandEncoder->drawIndexedPrimitives(
-            MTL::PrimitiveType::PrimitiveTypeTriangle,
-            3 * _facesCount, // 3 vertices per face
-            MTL::IndexType::IndexTypeUInt32,
-            _facesBuffer.get(),
-            0
-            );
+        // set fill mode
+        if (wireframe)
+        {
+            metalCommandEncoder->setTriangleFillMode(MTL::TriangleFillMode::TriangleFillModeLines);
+        }
+        else
+        {
+            metalCommandEncoder->setTriangleFillMode(MTL::TriangleFillMode::TriangleFillModeFill);
+        }
+
+        if (_pso->primitiveType == Triangle)
+        {
+            metalCommandEncoder->drawIndexedPrimitives(
+                MTL::PrimitiveType::PrimitiveTypeTriangle,
+                3 * _facesCount, // 3 vertices per face
+                MTL::IndexType::IndexTypeUInt32,
+                _facesBuffer.get(),
+                0
+                );
+        } else if (_pso->primitiveType == Line)
+        {
+            metalCommandEncoder->drawPrimitives(
+                MTL::PrimitiveTypeLine,
+                NS::UInteger(0),
+                NS::UInteger(_verticesCount),
+                NS::UInteger(1) // stride of 1 for lines
+                );
+        }
+        // reset fill mode
+        metalCommandEncoder->setTriangleFillMode(MTL::TriangleFillMode::TriangleFillModeFill);
     };
 }
 
