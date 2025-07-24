@@ -51,6 +51,20 @@ namespace Rendering
             }
         },
         std::pair<std::string, const PSOConfig>{
+            std::string("VCPHONG_W"),
+            PSOConfig
+            {
+                "VCPHONG_W",
+                "vertexVCPHONG",
+                "fragmentVCPHONG",
+                Triangle,
+                Wireframe,
+                Back,
+                Enabled,
+                G_getVertexDescriptors().at("PCN")
+            }
+        },
+        std::pair<std::string, const PSOConfig>{
             std::string("UI"),
             PSOConfig
             {
@@ -90,6 +104,20 @@ namespace Rendering
                 Back,
                 Disabled,
                 G_getVertexDescriptors().at("PUV")
+            }
+        },
+        std::pair<std::string, const PSOConfig>{
+            std::string("curve"),
+            PSOConfig
+            {
+                "curve",
+                "vertexCurve",
+                "fragmentCurve",
+                Line,
+                Solid,
+                Back,
+                Enabled,
+                G_getVertexDescriptors().at("PC")
             }
         }
     };
