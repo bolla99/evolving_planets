@@ -71,6 +71,10 @@ namespace Rendering
             RenderLayer layer = RenderLayer::OPAQUE
             );
         std::shared_ptr<IRenderable> removeRenderable(uint64_t index);
+        void setVisible(uint64_t index, bool visible);
+        void setWireframe(uint64_t index, bool wireframe);
+        const glm::mat4x4& modelMatrix(uint64_t index);
+        void modelMatrix(uint64_t index, const glm::mat4x4& matrix);
         void loadPSOs(const std::unordered_map<std::string, const PSOConfig>& psoConfigs);
         void loadPSO(const PSOConfig& config);
 

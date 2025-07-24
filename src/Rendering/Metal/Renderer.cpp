@@ -79,7 +79,7 @@ namespace Rendering::Metal
         const auto passDescriptor = NS::TransferPtr(MTL::RenderPassDescriptor::alloc()->init());
         passDescriptor->colorAttachments()->object(0)->setTexture(drawable->texture());
         passDescriptor->colorAttachments()->object(0)->setLoadAction(MTL::LoadAction::LoadActionClear);
-        passDescriptor->colorAttachments()->object(0)->setClearColor(MTL::ClearColor{0.5, 0.0, 0.5, 1.0});
+        passDescriptor->colorAttachments()->object(0)->setClearColor(MTL::ClearColor{0.8f, 0.8f, 0.8f, 1.0});
         passDescriptor->colorAttachments()->object(0)->setStoreAction(MTL::StoreAction::StoreActionStore);
 
         // depth texture
@@ -117,6 +117,11 @@ namespace Rendering::Metal
         auto depthStencilState = NS::TransferPtr(_device->newDepthStencilState(depthStencilDescriptor.get()));
 
         encoder->setDepthStencilState(depthStencilState.get());
+
+        auto depthStencilDescriptorTransparent = NS::TransferPtr(MTL::DepthStencilDescriptor::alloc()->init());
+        depthStencilDescriptor->setDepthCompareFunction(MTL::CompareFunctionAlways);
+        depthStencilDescriptor->setDepthWriteEnabled(false);
+        auto depthStencilStateTransparent = NS::TransferPtr(_device->newDepthStencilState(depthStencilDescriptor.get()));
 
         // set sampler
         auto samplerDescriptor = NS::TransferPtr(MTL::SamplerDescriptor::alloc()->init());
@@ -180,11 +185,12 @@ namespace Rendering::Metal
         }
         for (const auto& renderable : _renderables[static_cast<int>(RenderLayer::OPAQUE)] | std::views::values)
         {
-            renderable->render(&rce, viewProjectionMatrix);
+            if (renderable->visible) renderable->render(&rce, viewProjectionMatrix);
         }
+        encoder->setDepthStencilState(depthStencilStateTransparent.get());
         for (const auto& renderable : _renderables[static_cast<int>(RenderLayer::TRANSPARENT)] | std::views::values)
         {
-            renderable->render(&rce, viewProjectionMatrix);
+            if (renderable->visible) renderable->render(&rce, viewProjectionMatrix);
         }
         for (const auto& renderable : _renderables[static_cast<int>(RenderLayer::UI)] | std::views::values)
         {
@@ -198,10 +204,6 @@ namespace Rendering::Metal
 
         _debugUICallback();
 
-        ImGui::Begin("Hello Cane");
-        ImGui::Text("CANE PELOSO");
-
-        ImGui::End();
         ImGui::Render();
         ImGui_ImplMetal_RenderDrawData(ImGui::GetDrawData(), buffer, encoder);
 

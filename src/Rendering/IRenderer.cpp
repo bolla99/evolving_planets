@@ -75,6 +75,54 @@ namespace Rendering
         }
     }
 
+    void IRenderer::setVisible(uint64_t index, bool visible)
+    {
+        for (auto& layer : _renderables)
+        {
+            if (layer.contains(index))
+            {
+                layer[index]->visible = visible;
+                return; // found and set visibility
+            }
+        }
+    }
+
+    void IRenderer::setWireframe(uint64_t index, bool wireframe)
+    {
+        for (auto& layer : _renderables)
+        {
+            if (layer.contains(index))
+            {
+                layer[index]->wireframe = wireframe;
+                return; // found and set wireframe mode
+            }
+        }
+    }
+    const glm::mat4x4& IRenderer::modelMatrix(uint64_t index)
+    {
+        for (auto& layer : _renderables)
+        {
+            if (layer.contains(index))
+            {
+                return layer[index]->modelMatrix(); // return the model matrix of the renderable
+            }
+        }
+        throw std::runtime_error("Renderable not found");
+    }
+    void IRenderer::modelMatrix(uint64_t index, const glm::mat4x4& matrix)
+    {
+        for (auto& layer : _renderables)
+        {
+            if (layer.contains(index))
+            {
+                layer[index]->modelMatrix(matrix); // set the model matrix of the renderable
+                return; // found and set model matrix
+            }
+        }
+    }
+
+
+
     // load the pipeline state objects from the PSOConfigs using the pso factory
     void IRenderer::loadPSOs(const std::unordered_map<std::string, const PSOConfig>& psoConfigs)
     {
