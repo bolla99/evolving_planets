@@ -27,6 +27,18 @@ namespace Rendering
         virtual ~IRenderable() = default;
         virtual void render(ICommandEncoder* commandEncoder, const glm::mat4x4& viewProjectionMatrix) const = 0;
 
+        bool visible = true;
+        bool wireframe = false;
+
+        const glm::mat4x4& modelMatrix() const
+        {
+            return _modelMatrix;
+        }
+        void modelMatrix(const glm::mat4x4& matrix)
+        {
+            _modelMatrix = matrix;
+        }
+
     protected:
         std::shared_ptr<IPSO> _pso;
         glm::mat4x4 _modelMatrix;
