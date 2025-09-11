@@ -10,8 +10,9 @@
 #include <Core/VertexAttributeEnums.hpp>
 
 #include "BSpline.hpp"
-#include "Planet.hpp"
 #include "glm/glm.hpp"
+
+class Planet;
 
 class Mesh
 {
@@ -37,6 +38,9 @@ public:
     [[nodiscard]] int getNumVertices() const { return _numVertices; }
     [[nodiscard]] int getNumFaces() const { return _numFaces; }
 
+    [[nodiscard]] std::vector<glm::vec3> getVertices() const;
+    [[nodiscard]] std::vector<glm::vec3> getTriangles() const;
+
     static std::shared_ptr<Mesh> quad(
         const float* pos, float w, float h, const float* color, float uvWidth, float uvHeight
         );
@@ -61,6 +65,13 @@ public:
     static std::shared_ptr<Mesh> fromPlanet(
         const Planet& planet,
         const glm::vec4& color = noVertexColor(),
+        float samplingRes = 0.01f
+        );
+
+    static std::shared_ptr<Mesh> fromPlanetFitnessColor(
+        const Planet& planet,
+        const glm::vec4& c1 = glm::vec4(0.0f, 1.0f, 0.0f, 1.0f),
+        const glm::vec4& c2 = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f),
         float samplingRes = 0.01f
         );
 
