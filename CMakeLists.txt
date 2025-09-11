@@ -61,6 +61,17 @@ add_subdirectory(assimp)
 add_subdirectory(glm)
 add_subdirectory(imgui)
 add_subdirectory(bezier)
+target_include_directories(
+        bezier PUBLIC
+        ./include
+        Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include
+)
+target_embed_metal_shader_libraries(main BezierShaders)
+add_custom_command(TARGET main POST_BUILD
+        DEPENDS BezierShaders
+        COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:BezierShaders>" "$<TARGET_BUNDLE_CONTENT_DIR:main>/Resources/$<TARGET_FILE_NAME:BezierShaders>"
+        VERBATIM
+)
 
 if(APPLE)
     message("setting openmp on macos")
@@ -86,6 +97,12 @@ add_custom_command(TARGET main POST_BUILD
 )
 
 add_subdirectory(genetic)
+target_include_directories(
+        genetic PUBLIC
+        ./include
+        Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include
+)
+target_link_libraries(genetic PUBLIC gravity)
 
 target_include_directories(imgui PRIVATE ${SDL2_TTF_INCLUDE_DIRS})
 
@@ -108,6 +125,8 @@ if(TARGET glm)
             XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY ""
     )
 endif()
+
+target_link_libraries(bezier PUBLIC gravity)
 
 target_link_libraries(main PRIVATE
         "-framework Metal"
