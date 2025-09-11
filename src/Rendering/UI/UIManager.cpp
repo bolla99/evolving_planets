@@ -162,4 +162,9 @@ namespace Rendering::UI
             _currentContext->elements.push_back(std::move(label));
         }
     }
+
+    bool UIManager::button(const std::string& text)
+    {
+        return true;
+    }
 }

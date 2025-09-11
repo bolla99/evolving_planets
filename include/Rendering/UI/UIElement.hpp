@@ -9,8 +9,14 @@
 
 namespace Rendering::UI
 {
+    // Forward declaration of UIRenderer to avoid circular dependency
     class UIRenderer;
 
+    /**
+     * UIElement is an abstract base class representing a generic user interface element.
+     * It provides basic properties such as position and size, and requires derived classes
+     * to implement the submitToRenderer method for rendering purposes.
+     */
     class UIElement
     {
     public:
@@ -20,8 +26,8 @@ namespace Rendering::UI
         virtual ~UIElement() = default;
 
         UIElement(UIElement&& other) noexcept = default;
-        UIElement& operator=(UIElement&& other) noexcept = default;
         UIElement(const UIElement& other) = default;
+        UIElement& operator=(UIElement&& other) noexcept = default;
         UIElement& operator=(const UIElement& other) = default;
 
         [[nodiscard]] int x() const { return _x; }
@@ -35,9 +41,9 @@ namespace Rendering::UI
         void height(int value) { _height = value; }
 
         /**
-         * Registers the UI element with the specified UI renderer. This function is responsible
-         * for integrating the UI element into the rendering pipeline, so it can be displayed
-         * properly on the user interface.
+         * This function adds the UI element to the renderer.
+         * The function is meant to be implemented with the visitor pattern, which means
+         * that the rendering logic is implemented within the UIRenderer class, not the UIElement class.
          *
          * @param renderer A pointer to the UIRenderer object that will manage the rendering of the UI element.
          *                 The renderer must be a valid instance and handle the rendering logic.

@@ -41,20 +41,40 @@ namespace Rendering::UI
     public:
         explicit UIManager(
             std::unique_ptr<UIRenderer> uiRenderer
-            ) : _uiRenderer(std::move(uiRenderer)) {}
+            ) :
+        _uiRenderer(std::move(uiRenderer)),
+        _currentContext(nullptr) {}
 
+        /**
+         * Process an SDL event.
+         * @param event SDL event to process
+         * @return true if the event was processed by the UIManager, false otherwise.
+         */
         bool processInput(SDL_Event event);
+
+        /**
+         * To be called after the last endWindow call.
+         */
         void update();
+
+        /**
+         * To be called before the first beginWindow call.
+         */
         void clear();
 
         void beginWindow(const std::string& name);
         void endWindow();
+
+        // elements
         void text(const std::string& text);
+        bool button(const std::string& text);
 
     private:
+        // renderer
         std::unique_ptr<UIRenderer> _uiRenderer;
-
+        // window contexts
         std::unordered_map<std::string, std::unique_ptr<WindowContext>> _contexts;
+        // current context
         WindowContext* _currentContext;
     };
 }
