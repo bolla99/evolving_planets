@@ -4,6 +4,10 @@
 
 #include "App.hpp"
 
+#include <thread>
+#include <atomic>
+#include <future>
+
 #include <iostream>
 #include <stdexcept>
 #include <SDL2/SDL.h>
@@ -27,7 +31,10 @@
 #include "Planet.hpp"
 #include <gravity.hpp>
 #include <GravityAdapter.hpp>
+#include <ctime>
+#include <cstdlib>
 
+#include "genetic.hpp"
 #include "timer.hpp"
 
 // app constructor initialize sdl, create a window and try to
@@ -87,6 +94,7 @@ App::~App()
 }
 App& App::init()
 {
+    std::srand(static_cast<unsigned int>(std::time(nullptr)));
     std::cout << "app::init()" << std::endl;
     int w, h;
     SDL_GetWindowSize(_window, &w, &h);
@@ -141,7 +149,7 @@ App& App::init()
             {0.1f, 0.1f, 0.2f, 1.0f}
         });
 
-    _renderer->setAmbientGlobalLight({0.2f, 0.0f, 0.0f, 1.0f});
+    _renderer->setAmbientGlobalLight({0.2f, 0.2f, 0.2f, 1.0f});
 
     static_cast<TrackballCamera*>(_camera.get())->zoom(5.0f);
 
@@ -160,6 +168,7 @@ App& App::run()
     std::vector<uint64_t> parallelsAndMeridiansIDs = {};
     std::vector<uint64_t> meshIDs = {};
     std::vector<uint64_t> tubesIDs = {};
+    std::vector<uint64_t> sticksIDs = {};
     std::shared_ptr<Planet> planet;
 
     std::cout << "app::run()" << std::endl;
@@ -170,6 +179,18 @@ App& App::run()
     auto lastTime = SDL_GetTicks();
     Uint32 currentTime = 0;
     float deltaTime = 0.0f;
+
+    // GA
+    std::future<std::shared_ptr<PlanetGA>> futureGA;
+    std::shared_ptr<PlanetGA> ga = nullptr;
+    
+    bool gaShouldLoop = false;
+    int currentPlanet = 0;
+    float tessellationResolution = 0.03f;
+    
+    bool looping = false;
+    bool dirtyPlanets = true;
+    bool gaLaunched = false;
 
     while (running)
     {
@@ -200,6 +221,29 @@ App& App::run()
                 {
                     running = false;
                 }
+                if (event.key.keysym.sym == SDLK_SPACE)
+                {
+                    gaShouldLoop = !gaShouldLoop;
+                }
+                if (event.key.keysym.sym == SDLK_s)
+                {
+                    if (ga) ga->population[currentPlanet]->laplacianSmoothing(0.1f, 0.7f);
+                }
+                if (event.key.keysym.sym == SDLK_LEFT)
+                {
+                    if (ga)
+                    {
+                        if (currentPlanet > 0)
+                            currentPlanet--;
+                    }
+                }
+                else if (event.key.keysym.sym == SDLK_RIGHT)
+                {
+                    if (ga) {
+                        if (currentPlanet < ga->population.size() - 1)
+                            currentPlanet++;
+                    }
+                }
             }
         }
         // update the camera
@@ -210,72 +254,59 @@ App& App::run()
         if (keyboardState[SDL_SCANCODE_DOWN]) trackballCamera->zoom(12.0f * deltaTime);
 
         _renderer->setDebugUICallback(
-            [&parallelsAndMeridiansIDs, &meshIDs, &tubesIDs, &planet, this, controlPointMesh]()
+                                      [&parallelsAndMeridiansIDs, &meshIDs, &tubesIDs, &planet, this, controlPointMesh, &sticksIDs, &ga, &currentPlanet, &tessellationResolution, &futureGA, &gaShouldLoop, &gaLaunched, &looping]()
             {
+                // STATIC VARIABLES (HANDLED BY UI)
                 static int nParallelsCP = 14;
                 static int nMeridiansCP = 14;
-                static float step = 0.01f;
+                static float autointersectionStep = 0.01f;
                 static int nParallelsDrawn = 50;
                 static int nMeridiansDrawn = 50;
-                static float tesselationResolution = 0.01f;
                 static bool showParallelsAndMeridians = false;
-                static bool showMesh = false;
+                static bool showMesh = true;
                 static bool showTubes = false;
                 static bool wireframe = false;
+                static bool normals = false;
+                static int populationSize = 20;
+                static int initMutations = 15;
+                static int mutationAttempts = 15;
+                static int crossoverAttempts = 20;
+                static float mutationScale = 0.3f;
+                static float mutationMinDistance = 0.3f;
+                static float mutationMaxDistance = 1.3f;
+                static int immigrationSize = 0;
+                static int gravityComputationSampleSize = 32;
+                static int gravityComputationTubesResolution = 32;
+                static float diversityCoefficient = 0.0f;
+                
+                // UI -> PARAMETERS
+                ImGui::Begin("Planets Generation and Evolution");
+                ImGui::PushItemWidth(80);
 
-                ImGui::Begin("Asteroids");
-                ImGui::InputInt("nParallelsCP", &nParallelsCP);
-                ImGui::InputInt("nMeridiansCP", &nMeridiansCP);
-                ImGui::InputFloat("step", &step);
-                if (ImGui::SliderFloat("tessellation resolution", &tesselationResolution, 0.01f, 0.1f))
-                {
-                    if (planet)
-                    {
-                        for (auto& id: meshIDs)
-                        {
-                            _renderer->removeRenderable(id);
-                        }
-                        meshIDs.clear();
-                        auto mesh = Mesh::fromPlanet(*planet, glm::vec4(0.0f, 0.0f, 0.0f, 1.0f), tesselationResolution);
-                        meshIDs.push_back(
-                            _renderer->addRenderable(
-                                *mesh, Rendering::psoConfigs.at("VCPHONG_W"), {}, Rendering::RenderLayer::OPAQUE
-                                )
-                            );
-                        _renderer->setWireframe(meshIDs.back(), wireframe);
-                        _renderer->setVisible(meshIDs.back(), showMesh);
-                    }
-                };
-                ImGui::InputInt("nParallelsDrawn", &nParallelsDrawn);
-                ImGui::InputInt("nMeridiansDrawn", &nMeridiansDrawn);
+                ImGui::InputInt("n parallels", &nParallelsCP);
+                ImGui::InputInt("n meridians", &nMeridiansCP);
+                ImGui::InputFloat("auto intersection step", &autointersectionStep);
+                if (ImGui::SliderFloat("tessellation resolution", &tessellationResolution, 0.01f, 0.03f, "%.2f"));
+                ImGui::InputInt("population size", &populationSize);
+                ImGui::InputInt("immigration size", &immigrationSize);
+                ImGui::Separator();
+                ImGui::Text("Mutation parameters:");
+                ImGui::InputInt("initial mutations", &initMutations);
+                ImGui::InputInt("mutation attempts", &mutationAttempts);
+                ImGui::InputFloat("mutation scale", &mutationScale);
+                ImGui::InputFloat("min distance", &mutationMinDistance);
+                ImGui::InputFloat("max distance", &mutationMaxDistance);
+                ImGui::Separator();
+                ImGui::Text("crossover parameters:");
+                ImGui::InputInt("crossover attempts", &crossoverAttempts);
+                ImGui::Text("Fitness computation parameters:");
+                ImGui::InputInt("gravity sample res", &gravityComputationSampleSize);
+                ImGui::InputInt("gravity tubes res", &gravityComputationTubesResolution);
+                ImGui::InputFloat("diversity coefficient", &diversityCoefficient);
+                
+                //ImGui::InputInt("nParallelsDrawn", &nParallelsDrawn);
+                //ImGui::InputInt("nMeridiansDrawn", &nMeridiansDrawn);
 
-                if (ImGui::Checkbox("Show parallels and meridians", &showParallelsAndMeridians))
-                {
-                    if (planet)
-                    {
-                        for (auto& id: parallelsAndMeridiansIDs)
-                        {
-                            _renderer->setVisible(id, showParallelsAndMeridians);
-                        }
-                    }
-                }
-                if (ImGui::Checkbox("Show mesh", &showMesh))
-                {
-                    if (planet)
-                    {
-                        for (auto& id: meshIDs)
-                        {
-                            _renderer->setVisible(id, showMesh);
-                        }
-                    }
-                }
-                if (ImGui::Checkbox("Show tubes", &showTubes))
-                {
-                    if (planet)
-                    {
-                        for (auto& id: tubesIDs) _renderer->setVisible(id, showTubes);
-                    }
-                }
                 if (ImGui::Checkbox("Wireframe", &wireframe))
                 {
                     if (planet)
@@ -286,113 +317,88 @@ App& App::run()
                         }
                     }
                 }
-
-                if (ImGui::Button("Regenerate Planet"))
+                
+                ImGui::Text("current planet index: %d", currentPlanet);
+                
+                if (ImGui::Button("Init Evolutionary Algorithm"))
                 {
-                    for (auto& id: parallelsAndMeridiansIDs)
-                    {
-                        _renderer->removeRenderable(id);
-                    }
-                    parallelsAndMeridiansIDs.clear();
-                    for (auto& id: meshIDs)
-                    {
-                        _renderer->removeRenderable(id);
-                    }
-                    meshIDs.clear();
-                    for (auto& id: tubesIDs)
-                    {
-                        _renderer->removeRenderable(id);
-                    }
-                    tubesIDs.clear();
-
-                    //auto planet = Planet::sphere(nParallelsCP, nMeridiansCP, 2.0f);
-                    planet = Planet::asteroid(nParallelsCP, nMeridiansCP, 2.0f);
-
-                    auto parallels = planet->trueParallels(step, nParallelsDrawn);
-                    for (auto& parallel: parallels)
-                    {
-                        auto mesh = Mesh::fromPolygon(
-                        parallel,
-                        glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
-                        auto id = _renderer->addRenderable(*mesh, Rendering::psoConfigs.at("curve"), {});
-                        _renderer->setVisible(id, showParallelsAndMeridians);
-                        parallelsAndMeridiansIDs.push_back(id);
-                    }
-
-                    auto meridians = planet->trueMeridians(step, nMeridiansDrawn);
-                    for (auto& meridian: meridians)
-                    {
-                        auto mesh = Mesh::fromPolygon(
-                            meridian,
-                            glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
-                        auto id = _renderer->addRenderable(*mesh, Rendering::psoConfigs.at("curve"), {});
-                        parallelsAndMeridiansIDs.push_back(id);
-                        _renderer->setVisible(id, showParallelsAndMeridians);
-                    }
-
-                    auto mesh = Mesh::fromPlanet(*planet, glm::vec4(0.0f, 0.0f, 0.0f, 1.0f), tesselationResolution);
-                    auto id = _renderer->addRenderable(
-                            *mesh, Rendering::psoConfigs.at("VCPHONG_W"), {}, Rendering::RenderLayer::OPAQUE
-                            );
-                    meshIDs.push_back(id);
-                    _renderer->setVisible(id, showMesh);
-
-                    /*
-                    auto cps = planet->controlPoints();
-                    for (const auto& cp : cps)
-                    {
-                        auto id = _renderer->addRenderable(
-                            *controlPointMesh,
-                            Rendering::psoConfigs.at("VCPHONG"),
-                            {},
-                            Rendering::RenderLayer::OPAQUE
-                        );
-                        meshIDs.push_back(id);
-                        _renderer->modelMatrix(id, glm::translate(_renderer->modelMatrix(id), cp));
-                        _renderer->modelMatrix(id, glm::scale(_renderer->modelMatrix(id), glm::vec3(0.1f)));
-                    }
-                    */
-
-                    // tubes
-                    auto cp = GravityAdapter::GravityComputer(*mesh);
-                    auto tubes = cp.getTubes();
-                    auto t = Timer();
-                    for (int i = 0; i < 1000; i++)
-                    {
-                        auto x = cp.getGravityCPU(glm::vec3(1.0f, 1.0f, 1.0f));
-                    }
-                    t.log();
-                    auto t2 = Timer();
-                    for (int i = 0; i < 1000; i++)
-                    {
-                        auto x = cp.getGravityGPU(glm::vec3(1.0f, 1.0f, 1.0f));
-                    }
-                    t2.log();
-                    auto tubesMesh = Mesh::fromPolygon(
-                        tubes, glm::vec4(0.0f, 0.0f, 1.0f, 1.0f), false);
-                    auto _tIDs = _renderer->addRenderable(
-                            *tubesMesh, Rendering::psoConfigs.at("curve"), {}
-                            );
-                    _renderer->setVisible(_tIDs, showTubes);
-                    tubesIDs.push_back(_tIDs);
-
+                    // INIT EVOLUTIONARY ALGORITHM
+                    futureGA = std::async(std::launch::async, [&]() {
+                        auto gas = std::make_shared<PlanetGA>(
+                                                              populationSize,
+                                                              nParallelsCP,
+                                                              nMeridiansCP,
+                                                              2.0f,
+                                                              initMutations,
+                                                              true,
+                                                              immigrationSize,
+                                                              mutationScale,
+                                                              mutationMinDistance,
+                                                              mutationMaxDistance,
+                                                              mutationAttempts
+                                                              );
+                        gas
+                        ->crossoverType(Uniform)
+                            .crossoverAttempts(crossoverAttempts)
+                            .crossoverFallbackToContinuous(true)
+                            .crossoverFallbackAttempts(crossoverAttempts)
+                            .diversityCoefficient(diversityCoefficient)
+                            .gravityComputationSampleSize(gravityComputationSampleSize)
+                            .gravityComputationTubesResolution(gravityComputationTubesResolution)
+                            .autointersectionStep(autointersectionStep);
+                        return gas;
+                    });
                 }
-                if (ImGui::Button("Update mesh"))
+
+                if (gaShouldLoop)
+                    gaLaunched = true;
+    
+                if (gaLaunched)
                 {
-                    for (auto& id: meshIDs)
-                    {
-                        _renderer->removeRenderable(id);
-                    }
-                    meshIDs.clear();
-                    auto mesh = Mesh::fromPlanet(*planet, glm::vec4(0.0f, 0.0f, 0.0f, 1.0f), tesselationResolution);
-                    meshIDs.push_back(
-                        _renderer->addRenderable(
-                            *mesh, Rendering::psoConfigs.at("VCPHONG"), {}, Rendering::RenderLayer::OPAQUE
-                            )
-                        );
+                    ImGui::Text("Looping: %s", looping ? "true" : "false");
+                    ImGui::Text("Epoch: %d", ga ? ga->epoch : 0);
+                    ImGui::Text("Mean Fitness: %.3f", ga ? ga->lastMeanFitness : 0.0f);
                 }
+                
                 ImGui::End();
             });
+
+        // REAL TIME GA UPDATE
+        // check if ga is ready and consume it
+        if (!ga && futureGA.valid() && futureGA.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+            ga = futureGA.get();
+        }
+        
+        if (ga and !looping)// and dirtyPlanets)
+        {
+            for (auto& id: meshIDs)
+            {
+                _renderer->removeRenderable(id);
+            }
+            meshIDs.clear();
+            auto mesh = Mesh::fromPlanet(*ga->population[currentPlanet], glm::vec4(0.1f, 0.1f, 0.1f, 1.0f), tessellationResolution);
+            meshIDs.push_back(_renderer->addRenderable(
+                                          *mesh, Rendering::psoConfigs.at("VCPHONG_W"), {}, Rendering::RenderLayer::OPAQUE));
+            dirtyPlanets = false;
+        }
+        if (ga and gaShouldLoop) {
+            if (gaShouldLoop) {
+                //std::cout << "Running GA loop..." << std::endl;
+                // launch async loop
+                static auto voidFuture = std::async(std::launch::async, [&ga, &looping]() {
+                    looping = true;
+                    ga->loop();
+                    looping = false;
+                });
+                if (voidFuture.valid() && voidFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+                    voidFuture = std::async(std::launch::async, [&ga, &looping]() {
+                        looping = true;
+                        ga->loop();
+                        looping = false;
+                    });
+                }
+            }
+        }
 
 
         // rendering update
