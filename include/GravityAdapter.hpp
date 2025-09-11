@@ -7,7 +7,7 @@
 
 #include <Mesh.hpp>
 #include <gravity.hpp>
-#include <bezier.hpp>
+
 
 namespace GravityAdapter
 {
@@ -20,7 +20,7 @@ namespace GravityAdapter
 
         [[nodiscard]] glm::vec3 getGravityCPU(const glm::vec3& position) const;
         [[nodiscard]] glm::vec3 getGravityGPU(const glm::vec3& position) const;
-
+        [[nodiscard]] std::vector<glm::vec3> getGravitiesGPU(const std::vector<glm::vec3>& positions) const;
         GravityComputer& setG(const float value) { G = value; return *this; }
 
         //glm::vec3 getGravityFromOctree(const glm::vec3& position);

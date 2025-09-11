@@ -9,7 +9,7 @@
 
 namespace GravityAdapter
 {
-    GravityComputer::GravityComputer(const Mesh& mesh, int tubesResolution)
+    GravityComputer::GravityComputer(const Mesh& mesh, int tubesResolution) : G(9.81f)
     {
         float tubesR;
         auto vertices = mesh.getAttributeData(Core::Position);
@@ -61,4 +61,24 @@ namespace GravityAdapter
     {
         return gravity::get_gravity_from_tubes_with_integral_with_gpu(position, _tubes, G, _tubesR);
     }
+    std::vector<glm::vec3> GravityComputer::getGravitiesGPU(const std::vector<glm::vec3>& positions) const
+    {
+        auto tubesAsFloatPtr = glm::value_ptr(_tubes.front().t1);
+        auto positionsAsFloatPtr = glm::value_ptr(positions.front());
+        auto floatValues = GPUComputing::get_gravities_from_tubes_with_integral(
+            tubesAsFloatPtr, static_cast<int>(_tubes.size()),
+            positionsAsFloatPtr, static_cast<int>(positions.size()), _tubesR, G);
+        auto gravityValues = std::vector<glm::vec3>();
+        gravityValues.reserve(positions.size());
+        for (size_t i = 0; i < positions.size(); ++i)
+        {
+            gravityValues.emplace_back(
+                floatValues[i * 3],
+                floatValues[i * 3 + 1],
+                floatValues[i * 3 + 2]
+            );
+        }
+        return gravityValues;
+    }
+
 }
