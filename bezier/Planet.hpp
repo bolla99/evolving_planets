@@ -29,56 +29,12 @@
 class Planet
 {
 public:
-    Planet(int degreeU, int degreeV, const std::vector<std::vector<glm::vec3>>& parallels) :
-        _degreeU(degreeU), _degreeV(degreeV), _parallels(parallels)
-    {
-        // make parallels periodic
-        if (_parallels.empty() || _parallels[0].empty())
-        {
-            throw std::invalid_argument("Parallels cannot be empty.");
-        }
-        if (_degreeU < 2 || _degreeV < 2)
-        {
-            throw std::invalid_argument("Degrees must be at least 2.");
-        }
-        if (_parallels.size() < _degreeV + 1)
-        {
-            throw std::invalid_argument("Not enough parallels for the specified degree.");
-        }
-        if (_parallels[0].size() < _degreeU + 1)
-        {
-            throw std::invalid_argument("Not enough control points in each parallel for the specified degree.");
-        }
-        for (auto& parallel : _parallels)
-        {
-            if (parallel.size() != _parallels[0].size())
-            {
-                throw std::invalid_argument("All parallels must have the same number of control points.");
-            }
-        }
-        // make parallels periodic
-        for (int i = 0; i < _parallels.size(); i++)
-        {
-            for (int j = 0; j < _degreeU; j++)
-            {
-                _parallels[i].push_back(_parallels[i][j]);
-            }
-        }
-        // make u knots
-        _knotsU = BSpline::generateKnots(
-            static_cast<int>(_parallels[0].size()),
-            _degreeU, 0
-        );
-        // make v knots
-        _knotsV = BSpline::generateKnots(
-            static_cast<int>(_parallels.size()),
-            _degreeV, _degreeV
-        );
-    }
+    Planet(int degreeU, int degreeV, const std::vector<std::vector<glm::vec3>>& parallels);
 
     // copy constructor
     Planet(const Planet& other) = default;
 
+    // EVALUATION
     [[nodiscard]] glm::vec3 evaluate(float u, float v) const;
     [[nodiscard]] glm::vec3 uFirstDerivative(float u, float v) const;
     [[nodiscard]] glm::vec3 vFirstDerivative(float u, float v) const;
@@ -87,8 +43,8 @@ public:
     [[nodiscard]] glm::vec3 uvMixedDerivative(float u, float v) const;
     [[nodiscard]] glm::vec3 normal(float u, float v) const;
 
+    //  GETTERS
     [[nodiscard]] const std::vector<std::vector<glm::vec3>>& parallelsCP() const;
-
     [[nodiscard]] std::vector<std::vector<glm::vec3>> meridiansCP() const;
 
     [[nodiscard]] std::vector<BSpline> parallels() const;
@@ -121,38 +77,48 @@ public:
 
     [[nodiscard]] std::vector<glm::vec3> normals(const std::vector<std::pair<float, float>>& pairs) const;
 
-    // fitness in one point
-    [[nodiscard]] float fitness(float u, float v, const GravityAdapter::GravityComputer& gc) const;
-    // global fitness
-    [[nodiscard]] float fitness(int sampleSize = 32, int tubesResolution = 32) const;
-
-    void recenter();
-
+    // EVOLUTIONARY ALGORITHM RELATED
     bool mutate(float absMinDistance, float absMaxDistance, float autointersectionStep = 0.01f);
     bool differentialMutate(const Planet& p1, const Planet& p2, float scaleFactor = 0.1f, float autointersectionStep = 0.01f);
-
     bool continuousCrossover(const Planet& other, Planet& child, float crossoverRate = 0.5f, float autointersectionStep = 0.01f) const;
     bool uniformCrossover(const Planet& other, Planet& child, float crossoverRate = 0.5f, float autointersectionStep = 0.01f) const;
     bool parallelWiseUniformCrossover(const Planet& other, Planet& child, float crossoverRate = 0.5f, float autointersectionStep = 0.01f) const;
-
+    [[nodiscard]] float fitness(float u, float v, const GravityAdapter::GravityComputer& gc) const;
+    [[nodiscard]] float fitness(int sampleSize = 32, int tubesResolution = 32) const;
     float diversity(const Planet& other) const;
 
+    // FACTORY METHODS
     static std::shared_ptr<Planet> sphere(int nParallels, int nMeridians, float radius = 1.0f);
     static std::shared_ptr<Planet> empty(int nParallels, int nMeridians);
     static std::shared_ptr<Planet> asteroid(int nParallels, int nMeridians, float radius = 1.0f);
 
+    // POST PROCESSING
     void resetPeriodicy();
     void polesSmoothing();
     void laplacianSmoothing(float step = 0.01f, float threshold = 0.5f);
-    float curvature(float u, float v) const;
+    void curvatureBasedSmoothing(float step = 0.1f);
+    void recenter();
+
+    // SURFACE ANALYSIS
+    float firstFundamentalForm(float u, float v) const;
+    float secondFundamentalForm(float u, float v) const;
+
+    float gaussCurvature(float u, float v) const;
+    float meanCurvature(float u, float v) const;
+    float laplacianCurvature(float u, float v) const;
+
 
     [[nodiscard]] std::vector<glm::vec3> controlPoints() const;
-    
+
     template<class Archive>
     void serialize(Archive & archive)
     {
         archive(_parallels); // serialize things by passing them to the archive
     }
+
+    // result to be deallocated
+    static std::vector<std::vector<float>> diversityGrid(const std::vector<std::shared_ptr<Planet>>& planets);
+    static std::vector<float> minDiversities(const std::vector<std::shared_ptr<Planet>>& planets);
 
 private:
     int _degreeU = 0;

@@ -5,13 +5,59 @@
 
 #include <array>
 #include <random>
-
 #include "BSpline.hpp"
 #include "Mesh.hpp"
 #include "glm/gtc/type_ptr.hpp"
 #include "glm/gtx/intersect.hpp"
 #include "glm/gtx/string_cast.hpp"
 
+
+Planet::Planet(int degreeU, int degreeV, const std::vector<std::vector<glm::vec3>>& parallels) :
+        _degreeU(degreeU), _degreeV(degreeV), _parallels(parallels)
+{
+    // make parallels periodic
+    if (_parallels.empty() || _parallels[0].empty())
+    {
+        throw std::invalid_argument("Parallels cannot be empty.");
+    }
+    if (_degreeU < 2 || _degreeV < 2)
+    {
+        throw std::invalid_argument("Degrees must be at least 2.");
+    }
+    if (_parallels.size() < _degreeV + 1)
+    {
+        throw std::invalid_argument("Not enough parallels for the specified degree.");
+    }
+    if (_parallels[0].size() < _degreeU + 1)
+    {
+        throw std::invalid_argument("Not enough control points in each parallel for the specified degree.");
+    }
+    for (auto& parallel : _parallels)
+    {
+        if (parallel.size() != _parallels[0].size())
+        {
+            throw std::invalid_argument("All parallels must have the same number of control points.");
+        }
+    }
+    // make parallels periodic
+    for (int i = 0; i < _parallels.size(); i++)
+    {
+        for (int j = 0; j < _degreeU; j++)
+        {
+            _parallels[i].push_back(_parallels[i][j]);
+        }
+    }
+    // make u knots
+    _knotsU = BSpline::generateKnots(
+        static_cast<int>(_parallels[0].size()),
+        _degreeU, 0
+    );
+    // make v knots
+    _knotsV = BSpline::generateKnots(
+        static_cast<int>(_parallels.size()),
+        _degreeV, _degreeV
+    );
+}
 
 glm::vec3 Planet::evaluate(float u, float v) const
 {
@@ -83,6 +129,7 @@ glm::vec3 Planet::vFirstDerivative(float u, float v) const
 }
 
 glm::vec3 Planet::uSecondDerivative(float u, float v) const {
+
     auto uSpan = BSpline::span(u, _knotsU, _degreeU);
     auto vSpan = BSpline::span(v, _knotsV, _degreeV);
 
@@ -104,6 +151,7 @@ glm::vec3 Planet::uSecondDerivative(float u, float v) const {
     return result;
 }
 glm::vec3 Planet::vSecondDerivative(float u, float v) const {
+
     auto uSpan = BSpline::span(u, _knotsU, _degreeU);
     auto vSpan = BSpline::span(v, _knotsV, _degreeV);
 
@@ -240,7 +288,7 @@ std::vector<glm::vec3> Planet::normalSticks(float length, float step) const
     std::vector<glm::vec3> normals;
     for (float u = 0.0f; u < 1.0f; u += step)
     {
-        for (float v = 0.0f; v < 1.0f; v += step)
+        for (float v = 0.0001f; v <= 1.0f - 0.0001f; v += step)
         {
             auto n = normal(u, v);
             normals.push_back(evaluate(u, v) + n * length);
@@ -336,14 +384,14 @@ std::shared_ptr<Planet> Planet::sphere(int nParallels, int nMeridians, float rad
             {
                 parallels[i][j] = glm::vec3(
                 radius * 0.1f * sin(deltaTheta) * cos(phi),
-                radius * heightMultiplier,
+                radius * heightMultiplier - 0.01f,
                 radius * 0.1f * sin(deltaTheta) * sin(phi));
             }
             else if (i == 2)
             {
                 parallels[i][j] = glm::vec3(
                 radius * 0.2f * sin(deltaTheta) * cos(phi),
-                radius * heightMultiplier,
+                radius * heightMultiplier - 0.02f,
                 radius * 0.2f * sin(deltaTheta) * sin(phi));
             }
             // SOUTHERN PLATEAU
@@ -352,7 +400,7 @@ std::shared_ptr<Planet> Planet::sphere(int nParallels, int nMeridians, float rad
                 parallels[i][j] = glm::vec3(
                 radius * 0.2f * sin(1.0 - deltaTheta) * cos(phi),
                 -radius * heightMultiplier,
-                radius * 0.2f * sin(1.0) * sin(phi));
+                radius * 0.2f * sin(1.0 - deltaTheta) * sin(phi));
             }
             else if (i == nParallels - 2)
             {
@@ -1028,7 +1076,7 @@ void Planet::polesSmoothing()
     auto nMeridians = static_cast<int>(_parallels[0].size());
     auto nPeriodic = _degreeU;
 
-    // Sout
+    // South
     // first south parallel that does not belong to the plateau
     int pSouth = 3;
     std::vector<glm::vec3> smoothedSouth(nMeridians);
@@ -1041,14 +1089,13 @@ void Planet::polesSmoothing()
         glm::vec3 down = _parallels[pSouth - 1][m];
         smoothedSouth[m] = (self + left + right + up + down) / 5.0f;
     }
-    // Copia i valori smussati e aggiorna la periodicità
     for (int m = 0; m < nMeridians - nPeriodic; ++m) {
         _parallels[pSouth][m] = smoothedSouth[m];
     }
     for (int m = 0; m < nPeriodic; ++m) {
         _parallels[pSouth][nMeridians - nPeriodic + m] = _parallels[pSouth][m];
     }
-    // Nord (dopo plateau_north)
+    // Nord
     int pNorth = nParallels - 4;
     std::vector<glm::vec3> smoothedNorth(nMeridians);
     for (int m = 0; m < nMeridians - nPeriodic; ++m) {
@@ -1102,26 +1149,225 @@ void Planet::laplacianSmoothing(float step, float threshold)
     resetPeriodicy();
 }
 
-float Planet::curvature(float u, float v) const
+void Planet::curvatureBasedSmoothing(float step)
 {
+    auto deltas = std::vector<std::vector<glm::vec3>>(_parallels.size());
+    for (int i = 0; i < _parallels.size(); i++) deltas[i] = std::vector<glm::vec3>(_parallels[i].size());
+    
+    auto u = 0.0f;
+    auto v = 0.0f;
+    while (u < 1.0f)
+    {
+        while (v < 1.0f)
+        {
+            auto curvature = meanCurvature(u, v);
+            auto du = uFirstDerivative(u, v);
+            auto duLength =glm::length(glm::normalize(du));
+            if (duLength < 0.5f || isnan(duLength)) { v+= step; continue; }
+            
+            auto dv = vFirstDerivative(u, v);
+            auto normal = glm::normalize(glm::cross(du, dv));
+
+            auto uSpan = BSpline::span(u, _knotsU, _degreeU);
+            auto vSpan = BSpline::span(v, _knotsV, _degreeV);
+
+            auto uBasis = BSpline::basis(
+                uSpan, u, _knotsU, _degreeU
+            );
+            auto vBasis = BSpline::basis(
+                vSpan, v, _knotsV, _degreeV
+            );
+
+            for (int i = 0; i < _degreeV + 1; i++)
+            {
+                for (int j = 0; j < _degreeU + 1; j++)
+                {
+                    //_parallels[vSpan - _degreeV + 1 + i][uSpan - _degreeU + 1 + j] += -0.0f;
+                    auto x = - 0.01f * uBasis[j] * vBasis[i] * curvature * normal;
+                    
+                    //_parallels[vSpan - _degreeV + 1 + i][uSpan - _degreeU + 1 + j] += x;
+                    deltas[vSpan - _degreeV + 1 + i][uSpan - _degreeU + 1 + j] += x;
+                    //uBasis[j] * vBasis[i] * _parallels[vSpan - _degreeV + 1 + i][uSpan - _degreeU + 1 + j];
+                }
+            }
+            v += step;
+        }
+        u += step;
+    }
+    for (int i = _degreeU; i < _parallels.size() - _degreeU; i++) {
+        for (int j = 0; j < _parallels[0].size(); j++) {
+            _parallels[i][j] += deltas[i][j];
+        }
+    }
+    resetPeriodicy();
+}
+
+float Planet::firstFundamentalForm(float u, float v) const {
+    auto Su = uFirstDerivative(u, v);
+    auto Sv = vFirstDerivative(u, v);
+    auto E = glm::dot(Su, Su);
+    auto F = glm::dot(Su, Sv);
+    auto G = glm::dot(Sv, Sv);
+    return E * G - F * F;
+}
+
+float Planet::secondFundamentalForm(float u, float v) const {
     auto Su = uFirstDerivative(u, v);
     auto Sv = vFirstDerivative(u, v);
     auto Suu = uSecondDerivative(u, v);
     auto Svv = vSecondDerivative(u, v);
     auto Suv = uvMixedDerivative(u, v);
-    // prima forma fondamentale
-    auto E = glm::dot(Su, Su);
-    auto F = glm::dot(Su, Sv);
-    auto G = glm::dot(Sv, Sv);
-    auto delta = E * G - F * F;
-    //Normale unitaria: n = (Su × Sv) / ||Su × Sv||
-//Seconda forma fondamentale: e = n · Suu f = n · Suv g = n · Svv
-    auto normal = glm::normalize(glm::cross(Su, Sv));
+
+    // second fundamenta form
+    auto normal = glm::normalize(glm::cross(Su, Sv)); // unit normal
     auto e = glm::dot(normal, Suu);
     auto f = glm::dot(normal, Suv);
     auto g = glm::dot(normal, Svv);
-    return 
+    return e * g - f * f;
 }
+
+float Planet::gaussCurvature(float u, float v) const
+{
+    auto epsilon = 0.0000001f;
+    auto firstFF = firstFundamentalForm(u, v);
+    auto secondFF = secondFundamentalForm(u, v);
+    if (std::abs(firstFF) < epsilon) return 0.0f;
+    auto K = secondFF / firstFF;
+
+    return K;
+}
+
+[[deprecated]] float Planet::meanCurvature(float u, float v) const {
+    auto epsilon = 0.0001f;
+    auto Su = uFirstDerivative(u, v);
+    if (isnan(glm::length(glm::normalize(Su)))) return 0.0f;
+    if (glm::length(Su) < epsilon) return 0.0f;
+    auto Sv = vFirstDerivative(u, v);
+    if (glm::length(Sv) < epsilon) return 0.0f;
+    auto Suu = uSecondDerivative(u, v);
+    auto Svv = vSecondDerivative(u, v);
+    auto Suv = uvMixedDerivative(u, v);
+    auto E = glm::dot(Su, Su);
+    if (E < 0.0f) throw std::runtime_error("E negativo");
+    auto F = glm::dot(Su, Sv);
+    auto G = glm::dot(Sv, Sv);
+    if (G < 0.0f) throw std::runtime_error("G negativo");
+    auto firstFF = E * G - F * F;
+    if (firstFF < epsilon) return 0.0f;
+    if (glm::length(glm::cross(Su, Sv)) < epsilon) return 0.0f;
+    auto normal = glm::normalize(glm::cross(Su, Sv)); // unit normal
+    if (isnan(normal.x)) return 0.0f;
+    auto e = glm::dot(normal, Suu);
+    auto f = glm::dot(normal, Suv);
+    auto g = glm::dot(normal, Svv);
+    //auto secondFFM = glm::mat2x2(e, f, f, g);
+
+    auto denom = std::max(std::abs((E*G) - (F*F)), epsilon * E*G);
+    if (firstFF < epsilon * (E * G) and 2 * firstFF > -epsilon * (E * G)) return 0.0f;
+    auto H = (e * G - 2.0f * f * F + g * E) / (2.0f * glm::sign(firstFF) * denom);
+    return std::abs(H);
+
+    /*
+    glm::mat2x2 first = {glm::vec2{E, F}, glm::vec2{F, G}};
+    glm::mat2x2 second = {glm::vec2{e, f}, glm::vec2{f, g}};
+    auto matrixH = glm::inverse(first) * second;
+    auto H = 0.5f * (matrixH[0][0] + matrixH[1][1]);
+    return H;
+     */
+
+    /*
+    // ORTHONORMAL BASIS APPROACH
+    auto su = glm::length(Su);
+    auto e1 = glm::normalize(Su);
+    auto a = glm::dot(Sv, e1);
+    auto e2 = Sv - a * e1;
+    auto b = glm::length(e2);
+    if (b < epsilon) return 0.0f;
+    //e2 = glm::normalize(e2);
+    /*
+    auto T = glm::mat2x2(su, 0, a, b);
+    auto secondFForth = glm::transpose(glm::inverse(T)) * secondFFM * glm::inverse(T);
+
+    auto H = 0.5f * (e / (su * su) + g / (b * b));
+    //H *= densityScaleFactor(u, v);
+
+    return H;
+    */
+}
+
+[[deprecated]] float Planet::laplacianCurvature(float u, float v) const
+{
+    auto spanU = BSpline::span(u, _knotsU, _degreeU);
+    auto spanV = BSpline::span(v, _knotsV, _degreeV);
+
+    auto uBasis = BSpline::basis(
+        spanU, u, _knotsU, _degreeU
+    );
+    auto vBasis = BSpline::basis(
+        spanV, v, _knotsV, _degreeV
+    );
+
+    float value = 0.0f;
+
+    for (int i = 1; i < _degreeV; i++)
+    {
+        for (int j = 1; j < _degreeU; j++)
+        {
+            auto gi = spanV - _degreeV + 1 + i;
+            auto gj = spanU - _degreeU + 1 + j;
+
+            auto laplacian = _parallels[gi][gj];
+            laplacian -= _parallels[gi - 1][gj] / 4.0f;
+            laplacian -= _parallels[gi + 1][gj] / 4.0f;
+            laplacian -= _parallels[gi][gj - 1] / 4.0f;
+            laplacian -= _parallels[gi][gj + 1] / 4.0f;
+            value += glm::length(laplacian) * uBasis[i] * vBasis[j];
+        }
+    }
+    return value;
+}
+
+std::vector<std::vector<float>> Planet::diversityGrid(const std::vector<std::shared_ptr<Planet>>& planets)
+{
+    auto grid = std::vector<std::vector<float>>(planets.size());
+    for (int i = 0; i < planets.size(); i++) { grid[i] = std::vector<float>(planets.size()); }
+
+    for (int i = 0; i < planets.size(); i++)
+    {
+        for (int j = 0; j < planets.size(); j++)
+        {
+            grid[i][j] = planets[i]->diversity(*planets[j]);
+        }
+    }
+    return grid;
+}
+
+std::vector<float> Planet::minDiversities(const std::vector<std::shared_ptr<Planet>>& planets)
+{
+    auto grid = diversityGrid(planets);
+    auto result = std::vector<std::pair<float, int>>(planets.size());
+    for (int i = 0; i < planets.size(); i++)
+    {
+        float min = std::numeric_limits<float>::max();
+        for (int j = 0; j < planets.size(); j++)
+        {
+            if (j < i && result[j].second == i)
+            {
+                continue;
+            }
+            min = std::min(min, grid[i][j]);
+        }
+        result.emplace_back(min, i);
+    }
+    auto mins = std::vector<float>();
+    for (int i = 0; i < result.size(); i++) mins.push_back(result[i].first);
+    return mins;
+}
+
+
+
+
+
 
 
 
