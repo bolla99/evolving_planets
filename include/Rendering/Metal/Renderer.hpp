@@ -33,11 +33,14 @@ namespace Rendering::Metal
         ~Renderer() override;
 
         void update(const glm::mat4x4& viewMatrix) override;
+        glm::mat4x4 getProjectionMatrix() const override;
+
 
     private:
         NS::SharedPtr<MTL::Device> _device;
         CA::MetalLayer* _layer;
         NS::SharedPtr<MTL::Library> _library;
+        CA::MetalDrawable* _drawable;
 
         SDL_Renderer* _sdl_renderer;
     };

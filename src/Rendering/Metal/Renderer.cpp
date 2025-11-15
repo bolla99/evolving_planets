@@ -74,10 +74,10 @@ namespace Rendering::Metal
     {
         auto pool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
         const auto queue = NS::TransferPtr(_device->newCommandQueue());
-        const auto drawable = _layer->nextDrawable();
+        _drawable = _layer->nextDrawable();
 
         const auto passDescriptor = NS::TransferPtr(MTL::RenderPassDescriptor::alloc()->init());
-        passDescriptor->colorAttachments()->object(0)->setTexture(drawable->texture());
+        passDescriptor->colorAttachments()->object(0)->setTexture(_drawable->texture());
         passDescriptor->colorAttachments()->object(0)->setLoadAction(MTL::LoadAction::LoadActionClear);
         passDescriptor->colorAttachments()->object(0)->setClearColor(MTL::ClearColor{0.8f, 0.8f, 0.8f, 1.0});
         passDescriptor->colorAttachments()->object(0)->setStoreAction(MTL::StoreAction::StoreActionStore);
@@ -87,8 +87,8 @@ namespace Rendering::Metal
         auto depthDesc = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
         depthDesc->setTextureType(MTL::TextureType2D);
         depthDesc->setPixelFormat(MTL::PixelFormatDepth32Float);
-        depthDesc->setWidth(drawable->texture()->width());
-        depthDesc->setHeight(drawable->texture()->height());
+        depthDesc->setWidth(_drawable->texture()->width());
+        depthDesc->setHeight(_drawable->texture()->height());
         depthDesc->setStorageMode(MTL::StorageModePrivate);
         depthDesc->setUsage(MTL::TextureUsageRenderTarget);
 
@@ -148,8 +148,8 @@ namespace Rendering::Metal
 
         // SET DRAWABLE SIZE BUFFER
         float drawableSize[2] = {
-            (float)drawable->texture()->width(),
-            (float)drawable->texture()->height()
+            (float)_drawable->texture()->width(),
+            (float)_drawable->texture()->height()
         };
         auto drawableSizeBuffer = NS::TransferPtr(_device->newBuffer(
             &drawableSize,
@@ -165,7 +165,7 @@ namespace Rendering::Metal
 
         const auto viewProjectionMatrix = glm::perspective(
             glm::radians(55.0f),
-            (float)drawable->texture()->width() / (float)drawable->texture()->height(),
+            (float)_drawable->texture()->width() / (float)_drawable->texture()->height(),
             0.1f,
             1000.0f) * viewMatrix;
 
@@ -210,7 +210,7 @@ namespace Rendering::Metal
 
         encoder->endEncoding();
 
-        buffer->presentDrawable(drawable);
+        buffer->presentDrawable(_drawable);
         buffer->commit();
     }
 
@@ -221,5 +221,15 @@ namespace Rendering::Metal
         SDL_DestroyRenderer(_sdl_renderer);
         std::cout << "SDL_DestroyRenderer call ended" << std::endl;
     }
+
+    glm::mat4x4 Renderer::getProjectionMatrix() const
+    {
+        return glm::perspective(
+            glm::radians(55.0f),
+            (float)_drawable->texture()->width() / (float)_drawable->texture()->height(),
+            0.1f,
+            1000.0f);
+    }
+
 }
 
