@@ -132,27 +132,30 @@ public:
             for (int j = 0; j <= degree; j++)
             {
                 // b: index of the basis function on a global numbering
+                // while j is relative numbering, b ins on global numbering
+                // use b instead of j whenever you must refer to the j-th basis function
                 auto b = j + span - degree + 1;
-                float w1 = 0.0f;
-                float w2 = 0.0f;
+                
+                float w1 = 0.0f; // weight for N_j at previous level
+                float w2 = 0.0f; // weight for N_j+1 at previous level
 
-                int d2 = 1;
-                if (b + i < knots.size()) {
-                    d2 = knots[b + i] - knots[b];
-                }
-
+                // no left member for the leftmost basis
                 if (j > 0)
                 {
                     auto d1 = knots[b + i - 1] - knots[b - 1];
-                    if (d1 != 0) w1 = (u - static_cast<float>(knots[b-1])) / static_cast<float>(d1);
+                    if (d1 != 0) // if d1 = 0, then w1 must be 0
+                        w1 = (u - static_cast<float>(knots[b-1])) / static_cast<float>(d1);
                 }
-                
-                if (b + i < knots.size()) {
-                    if (d2 != 0) w2 = (static_cast<float>(knots[i+b]) - u) / static_cast<float>(d2);
-                }	
+                // no right member for the rightmost basis
+                if (j < degree) {
+                    auto d2 = knots[b + i] - knots[b];
+                    if (d2 != 0)
+                        w2 = (static_cast<float>(knots[i+b]) - u) / static_cast<float>(d2);
+                }
 
                 basis[j] = w1 * oldBasis[j];
-                if (j < degree) basis[j] += w2 * oldBasis[j+1];
+                if (j < degree)
+                    basis[j] += w2 * oldBasis[j+1];
             }
             // update oldBasis
             oldBasis = basis;
@@ -173,7 +176,11 @@ public:
             oldBasis[i] = 0.0f;
         }
         // recursion level; the 0 step is already done as initialization ( 0, 0, 0, 1 )
-        for (int i = 1; i <= degree; i++)
+        // last recursion level is skipped, because first derivative
+        // is computed by the level = degree - 1 level basis functions
+        // after basis functions are computed till the level degree - 1, first
+        // derivative is computed as the last step.
+        for (int i = 1; i < degree; i++)
         {
             // basis index
             for (int j = 0; j <= degree; j++)
@@ -182,31 +189,19 @@ public:
                 float w1 = 0.0f;
                 float w2 = 0.0f;
 
-                int d2 = 1;
-                if (b + i < knots.size()) {
-                    d2 = knots[b + i] - knots[b];
-                }
-
+                // no left member for the leftmost basis
                 if (j > 0)
                 {
                     auto d1 = knots[b + i - 1] - knots[b - 1];
-                    if (d1 != 0) w1 = (u - static_cast<float>(knots[b-1])) / static_cast<float>(d1);
-
-                    // set last step to implement the first derivative
-                    if (d1 != 0 && i == degree)
-                    {
-                        w1 = static_cast<float>(i) / static_cast<float>(d1);
-                    }
+                    if (d1 != 0)
+                        w1 = (u - static_cast<float>(knots[b-1])) / static_cast<float>(d1);
                 }
-
-                if (b + i < knots.size()) {
-                    if (d2 != 0) w2 = (static_cast<float>(knots[i+b]) - u) / static_cast<float>(d2);
-
-                    // set last step for the derivative
-                    if (d2 != 0 && i == degree)
-                    {
-                        w2 = - static_cast<float>(i) / static_cast<float>(d2);
-                    }
+                
+                // no right member for the rightmost basis
+                if (j < degree) {
+                    auto d2 = knots[b + i] - knots[b];
+                    if (d2 != 0)
+                        w2 = (static_cast<float>(knots[i+b]) - u) / static_cast<float>(d2);
                 }
 
                 basis[j] = w1 * oldBasis[j];
@@ -215,15 +210,43 @@ public:
             // update oldBasis
             oldBasis = basis;
         }
+        // compute first derivative
+        for (int j = 0; j <= degree; j++) {
+            
+            auto b = j + span - degree + 1;
+            float w1 = 0.0f;
+            float w2 = 0.0f;
+        
+            // no left member for the leftmost basis
+            if (j > 0)
+            {
+                auto d1 = knots[b + degree - 1] - knots[b - 1];
+                if (d1 != 0)
+                {
+                    w1 = static_cast<float>(degree) / static_cast<float>(d1);
+                }
+            }
+            // no right member for the rightmost basis
+            if (j < degree) {
+                auto d2 = knots[b + degree] - knots[b];
+                if (d2 != 0)
+                {
+                    w2 = - static_cast<float>(degree) / static_cast<float>(d2);
+                }
+            }
+            basis[j] = w1 * oldBasis[j];
+            if (j < degree) basis[j] += w2 * oldBasis[j+1];
+        }
         return basis;
     }
+    
     static std::vector<float> d2Basis(int span, float t, const std::vector<int>& knots, int degree)
     {
         auto u = BSpline::toU(t, knots, degree);
         auto basis = std::vector<float>(degree + 1);
         auto oldBasis = std::vector<float>(degree + 1);
 
-        // initialize values for n = 0
+        // initialize values for the base recursion step
         basis[degree] = 1.0f;
         oldBasis[degree] = 1.0f;
         for (int i = 0; i < degree; ++i) {
@@ -231,68 +254,83 @@ public:
             oldBasis[i] = 0.0f;
         }
         // recursion level; the 0 step is already done as initialization ( 0, 0, 0, 1 )
-        for (int i = 1; i <= degree; i++)
+        // the recursion level = degree and degree - 1 are skipped
+        // because second derivative is computed
+        // using the elements of degree - 2 recursion level
+        for (int i = 1; i <= degree - 2; i++)
         {
             // basis index
             for (int j = 0; j <= degree; j++)
             {
+                // local index -> gloabal index
                 auto b = j + span - degree + 1;
+                
                 float w1 = 0.0f;
                 float w2 = 0.0f;
-
-                int d2 = 1;
-                if (b + i < knots.size()) {
-                    d2 = knots[b + i] - knots[b];
-                }
 
                 if (j > 0)
                 {
                     auto d1 = knots[b + i - 1] - knots[b - 1];
-                    if (d1 != 0) w1 = (u - static_cast<float>(knots[b-1])) / static_cast<float>(d1);
-
-                    if (d1 != 0 && i == degree - 1)
-                    {
-                        w1 = 6.0f;
-                        w1 /= static_cast<float>(knots[b + degree] - knots[b]);
-                        w1 /= static_cast<float>(knots[b + degree - 1] - knots[b]);
-                    }
+                    if (d1 != 0)
+                        w1 = (u - static_cast<float>(knots[b-1])) / static_cast<float>(d1);
                 }
 
-                if (b + i < knots.size()) {
-                    if (d2 != 0) w2 = (static_cast<float>(knots[i+b]) - u) / static_cast<float>(d2);
-                    if (d2 != 0 && i == degree - 1)
-                    {
-                        w2 = 6.0f;
-                        if (degree + b + 1 < knots.size())
-                        {
-                            auto c1 = 1.0f / static_cast<float>((knots[degree + b] - knots[b])*(knots[degree + b] - knots[b + 1]));
-                            c1 += 1.0f / static_cast<float>((knots[degree + b + 1] - knots[b + 1])*(knots[degree + b] - knots[b + 1]));
-                            c1 = -c1;
-                            w2 *= c1;
-                        } else { w2 = 0.0f; }
-                    }
+                if (j < degree) {
+                    auto d2 = knots[b + i] - knots[b];
+                    if (d2 != 0)
+                        w2 = (static_cast<float>(knots[i+b]) - u) / static_cast<float>(d2);
                 }
 
                 basis[j] = w1 * oldBasis[j];
                 if (j < degree) basis[j] += w2 * oldBasis[j+1];
-                if (j < degree - 1 && i == degree - 1)
-                {
-                    if (degree + b + 1 < knots.size())
-                        basis[j] += oldBasis[j+2] * 6.0f / static_cast<float>((knots[degree + b + 1] - knots[b + 1])*(knots[degree + b + 1] - knots[b + 2]));
-                }
             }
             // update oldBasis
             oldBasis = basis;
-            if (i == degree - 1) break;
+        }
+        // compute second derivative
+        for (int j = 0; j <= degree; j++) {
+            
+            auto b = j + span - degree + 1;
+
+            auto A = 0.0f;
+            auto B = 0.0f;
+            auto C = 0.0f;
+            
+            if (j > 0) {
+                auto dA = (knots[b + degree - 1] - knots[b - 1]) * (knots[b + degree - 2] - knots[b - 1]);
+                if (dA != 0)
+                    A = static_cast<float>(degree * (degree - 1)) / static_cast<float>(dA);
+            }
+            
+            if (j > 0 and j < degree) {
+                auto dB1 = (knots[b + degree - 1] - knots[b]) * (knots[b + degree - 1] - knots[b - 1]);
+                auto dB2 = (knots[b + degree] - knots[b]) * (knots[b + degree - 2] - knots[b]);
+                if (dB1 != 0)
+                    B += static_cast<float>(-degree * (degree - 1)) / static_cast<float>(dB1);
+                if (dB2 != 0)
+                    B += static_cast<float>(-degree * (degree - 1)) / static_cast<float>(dB2);
+            }
+            
+            if (j < degree) {
+                auto dC = (knots[b + degree] - knots[b]) * (knots[b + degree - 1] - knots[b]);
+                if (dC != 0)
+                    C = static_cast<float>(degree * (degree - 1)) / static_cast<float>(dC);
+            }
+            
+            basis[j] = A * oldBasis[j];
+            if (j + 1 < basis.size()) basis[j] += B * oldBasis[j + 1];
+            if (j + 2 < basis.size()) basis[j] += C * oldBasis[j + 2];
         }
         return basis;
     }
 
+    // return the knots index of the knot value that precedes the u value corresponding
+    // to the t value provided
     static int span(float t, const std::vector<int>& knots, int degree)
     {
         auto u = toU(t, knots, degree);
         int span = degree - 1; // Start with the first span
-        while (u >= static_cast<float>(knots[span + 1]) && span < static_cast<int>(knots.size()) - degree - 1) {
+        while (u >= static_cast<float>(knots[span + 1]) and span < static_cast<int>(knots.size()) - degree - 1) {
             ++span;
         }
         return span;
@@ -326,12 +364,11 @@ private:
     std::vector<int> _knots;
     int _degree = 0;
 
+    // return the u value by setting (0, 1) -> (u[degree-1], u[size-degree])
     static float toU(float t, const std::vector<int>& knots, int degree)
     {
         return (1.0f - t) * static_cast<float>(knots[degree - 1]) + t * static_cast<float>(knots[knots.size() - degree]);
     }
 };
-
-
 
 #endif //PERIODICBSPLINE_HPP
