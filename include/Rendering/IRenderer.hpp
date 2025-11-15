@@ -80,6 +80,8 @@ namespace Rendering
 
         void setDebugUICallback(std::function<void()> callback);
 
+        virtual glm::mat4x4 getProjectionMatrix() const = 0;
+
 
     protected:
         std::unique_ptr<IPSOFactory> _psoFactory;
