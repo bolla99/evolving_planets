@@ -5,6 +5,7 @@
 #include "TrackballCamera.hpp"
 #include <glm/glm.hpp>
 #include "Camera.hpp"
+#include "glm/ext/matrix_clip_space.hpp"
 
 TrackballCamera::TrackballCamera() : h(0.0f), v(0.0f), distance(0.0f) {}
 
