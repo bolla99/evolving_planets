@@ -48,7 +48,9 @@ PlanetGA::PlanetGA(
     float diversityCoefficient,
     int gravityComputationSampleSize,
     int gravityComputationTubesResolution,
-    float autointersectionStep
+    float autointersectionStep,
+    bool immigrationReplaceWithMutatedSphere,
+    int nImmigrationMutations
     ) : _nParallels(nParallels),
         _nMeridians(nMeridians),
         _radius(radius),
@@ -66,7 +68,9 @@ PlanetGA::PlanetGA(
         _diversityCoefficient(diversityCoefficient),
         _gravityComputationSampleSize(gravityComputationSampleSize),
         _gravityComputationTubesResolution(gravityComputationTubesResolution),
-        _autointersectionStep(autointersectionStep)
+        _autointersectionStep(autointersectionStep),
+        _immigrationReplaceWithMutatedSphere(immigrationReplaceWithMutatedSphere),
+        _nImmigrationMutations(nImmigrationMutations)
 {
     std::cout << "initializing population" << std::endl;
     population = std::vector<std::shared_ptr<Planet>>(size);
@@ -75,6 +79,7 @@ PlanetGA::PlanetGA(
     for (int i = 0; i < size; i++)
     {
         std::cout << "initializing individual " << i << " ";
+        currentInitializingIndividual = i;
         population[i] = Planet::sphere(nParallels, nMeridians, radius);
         //std::cout << "initializing individual " << i << std::endl;
         for (int j = 0; j < nInitMutations; j++)
@@ -95,11 +100,45 @@ void PlanetGA::loop()
 {
     if (_immigration)
     {
+        /*
         for (int i = 0; i < _immigrationNewIndividuals; i++) {
             int id = rand() % population.size();
             population[id] = Planet::sphere(_nParallels, _nMeridians, _radius);
             for (int j = 0; j < _nInitMutations; j++)
                 population[id]->mutate(_mutationMinDistance, _mutationMaxDistance, _autointersectionStep);
+        }
+        */
+        // alternative implementation: instead of creating brand new individuals, take those already existing
+        // and mutate them stochastically to create new individuals with similar fitness but different
+        /*
+        for (int i = 0; i < _immigrationNewIndividuals; i++) {
+            int id = rand() % population.size();
+            for (int i = 0; i < _nInitMutations; i++)
+                population[id]->mutate(_mutationMinDistance, _mutationMaxDistance, _autointersectionStep);
+        }
+        */
+
+        // third option -> mutate already existing planets, like the previous one, but choose the one with the highest
+        // similarity with respect to the rest of the population
+        auto minDiversities = Planet::minDiversities(population);
+        auto indices = std::vector<int>(population.size());
+        for (int i = 0; i < population.size(); i++) indices[i] = i;
+        auto sortedIndices = std::ranges::partial_sort(
+            indices,
+            indices.begin() + _immigrationNewIndividuals,
+            [&minDiversities](int a, int b) { return minDiversities[a] < minDiversities[b]; }
+            );
+        // mutate the _immigrationNewIndividuals individuals with minor diversity
+        for (int i = 0; i < _immigrationNewIndividuals; i++)
+        {
+            if (_immigrationReplaceWithMutatedSphere)
+                population[indices[i]] = Planet::sphere(_nParallels, _nMeridians, _radius);
+
+            // perform _nInitMutations
+            for (int k = 0; k < _nImmigrationMutations; k++)
+            {
+                population[indices[i]]->mutate(_mutationMinDistance, _mutationMaxDistance, _autointersectionStep);
+            }
         }
     }
     IEvolutionaryAlgorithm::loop();
@@ -197,6 +236,7 @@ void PlanetGA::crossover()
                     _autointersectionStep
                 ))
                 {
+                    success = true;
                     fallbackCrossovers++;
                     nextGeneration[i] = child;
                     nextGeneration[i]->polesSmoothing();
@@ -204,11 +244,17 @@ void PlanetGA::crossover()
                 }
             }
         }
+        if (!success)
+        {
+            for (int k = 0; k < _nInitMutations; k++)
+            {
+                nextGeneration[i]->mutate(_mutationMinDistance, _mutationMaxDistance, _autointersectionStep);
+            }
+            nextGeneration[i]->polesSmoothing();
+        }
     }
-    /*
     std::cout << "crossover done with success: " << 100.0f * static_cast<float>(successfulCrossovers) / static_cast<float>(population.size()) << "%" << std::endl;
     std::cout << "crossover fallback done with success: " << 100.0f * static_cast<float>(fallbackCrossovers) / static_cast<float>(population.size()) << "%" << std::endl;
-     */
     std::cout << "total crossover success: " << 100.0f * static_cast<float>(successfulCrossovers + fallbackCrossovers) / static_cast<float>(population.size()) << "%" << std::endl;
 }
 

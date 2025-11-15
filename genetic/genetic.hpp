@@ -27,6 +27,7 @@ public:
     float meanFitness = 0.0f;
     float lastMeanFitness = 0.0f;
     float meanError = 0.0f;
+    int currentInitializingIndividual = 0;
 };
 
 enum CrossoverType
@@ -57,7 +58,9 @@ public:
         float diversityCoefficient = 0.3f,
         int gravityComputationSampleSize = 32,
         int gravityComputationTubesResolution = 32,
-        float autointersectionStep = 0.01f
+        float autointersectionStep = 0.01f,
+        bool immigrationReplaceWithMutatedSphere = false,
+        int nImmigrationMutations = 30
         );
 
     PlanetGA& nParallels(int nParallels) { _nParallels = nParallels; return *this; }
@@ -78,6 +81,8 @@ public:
     PlanetGA& gravityComputationSampleSize(int gravityComputationSampleSize) { _gravityComputationSampleSize = gravityComputationSampleSize; return *this; }
     PlanetGA& gravityComputationTubesResolution(int gravityComputationTubesResolution) { _gravityComputationTubesResolution = gravityComputationTubesResolution; return *this; }
     PlanetGA& autointersectionStep(float autointersectionStep) { _autointersectionStep = autointersectionStep; return *this; }
+    PlanetGA& immigrationReplaceWithMutatedSphere(bool immigrationReplaceWithMutatedSphere) { _immigrationReplaceWithMutatedSphere = immigrationReplaceWithMutatedSphere; return *this; }
+    PlanetGA& nImmigrationMutations(int nImmigrationMutations) { _nImmigrationMutations = nImmigrationMutations; return *this; }
 
     void loop() override;
     void mutation() override;
@@ -104,6 +109,8 @@ private:
     int _gravityComputationSampleSize;
     int _gravityComputationTubesResolution;
     float _autointersectionStep;
+    bool _immigrationReplaceWithMutatedSphere;
+    int _nImmigrationMutations;
 };
 
 class CMA : public IEvolutionaryAlgorithm<Planet>
