@@ -1,5 +1,8 @@
-cmake_minimum_required(VERSION 3.9)
+cmake_minimum_required(VERSION 3.31)
 cmake_policy(SET CMP0079 NEW)
+cmake_policy(SET CMP0175 NEW)
+
+project(evolving_planets)
 
 if(APPLE)
     link_directories("/opt/homebrew/opt/libomp/lib/")
@@ -8,12 +11,14 @@ endif()
 
 set(CMAKE_BUILD_RPATH APPEND /Library/Frameworks/)
 set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};${CMAKE_SOURCE_DIR}/cmake")
+
 include(MetalShaderSupport)
 
-project(evolving_planets)
-enable_language(Metal)
-
 set(CMAKE_CXX_STANDARD 20)
+
+# Imposta il path al compilatore Metal
+set(CMAKE_Metal_COMPILER "/Applications/Xcode.app/Contents/Developer/Toolchains/Metal.xctoolchain/usr/bin/metal" CACHE FILEPATH "Path to Metal compiler")
+enable_language(Metal)
 
 # Configurazioni per evitare problemi di code signing
 set(CMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED NO)
@@ -41,7 +46,7 @@ target_embed_metal_shader_libraries(main
         Shaders
 )
 add_custom_command(TARGET main POST_BUILD
-        DEPENDS Shaders
+        #DEPENDS Shaders
         COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:Shaders>" "$<TARGET_BUNDLE_CONTENT_DIR:main>/Resources/$<TARGET_FILE_NAME:Shaders>"
         VERBATIM
 )
@@ -68,7 +73,7 @@ target_include_directories(
 )
 target_embed_metal_shader_libraries(main BezierShaders)
 add_custom_command(TARGET main POST_BUILD
-        DEPENDS BezierShaders
+        #DEPENDS BezierShaders
         COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:BezierShaders>" "$<TARGET_BUNDLE_CONTENT_DIR:main>/Resources/$<TARGET_FILE_NAME:BezierShaders>"
         VERBATIM
 )
@@ -91,7 +96,7 @@ if(OpenMP_CXX_FOUND)
 add_subdirectory(gravity)
 target_embed_metal_shader_libraries(main GravityShaders)
 add_custom_command(TARGET main POST_BUILD
-        DEPENDS GravityShaders
+        #DEPENDS GravityShaders
         COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:GravityShaders>" "$<TARGET_BUNDLE_CONTENT_DIR:main>/Resources/$<TARGET_FILE_NAME:GravityShaders>"
         VERBATIM
 )
