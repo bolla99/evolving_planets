@@ -41,9 +41,12 @@ public:
     [[nodiscard]] std::vector<glm::vec3> getVertices() const;
     [[nodiscard]] std::vector<glm::vec3> getTriangles() const;
 
+
+    // FACTORY METHODS
     static std::shared_ptr<Mesh> quad(
         const float* pos, float w, float h, const float* color, float uvWidth, float uvHeight
         );
+
     static glm::vec4 noVertexColor()
     {
         return {1.0f, 0.0f, 1.0f, 1.0f};
@@ -54,26 +57,48 @@ public:
         float step,
         const glm::vec4& color
     );
-
     static std::shared_ptr<Mesh> fromPolygon(
         const std::vector<glm::vec3>& positions,
         const glm::vec4& color = noVertexColor(),
         bool addInnerVertices = true
         );
-
-
     static std::shared_ptr<Mesh> fromPlanet(
         const Planet& planet,
         const glm::vec4& color = noVertexColor(),
         float samplingRes = 0.01f
         );
-
     static std::shared_ptr<Mesh> fromPlanetFitnessColor(
+        const Planet& planet,
+        const glm::vec4& c1 = glm::vec4(0.0f, 1.0f, 0.0f, 1.0f),
+        const glm::vec4& c2 = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f),
+        float samplingRes = 0.01f,
+        bool discreteColoring = false,
+        float fitnessTreshold = 0.9f
+        );
+    static std::shared_ptr<Mesh> fromPlanetMeanCurvatureColor(
         const Planet& planet,
         const glm::vec4& c1 = glm::vec4(0.0f, 1.0f, 0.0f, 1.0f),
         const glm::vec4& c2 = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f),
         float samplingRes = 0.01f
         );
+    static std::shared_ptr<Mesh> fromPlanetGaussCurvatureColor(
+        const Planet& planet,
+        const glm::vec4& c1 = glm::vec4(0.0f, 1.0f, 0.0f, 1.0f),
+        const glm::vec4& c2 = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f),
+        float samplingRes = 0.01f
+        );
+    static std::shared_ptr<Mesh> fromPlanetLaplacianCurvatureColor(
+        const Planet& planet,
+        const glm::vec4& c1 = glm::vec4(0.0f, 1.0f, 0.0f, 1.0f),
+        const glm::vec4& c2 = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f),
+        float samplingRes = 0.01f
+        );
+
+    // depends on gravity library (ray triangle intersection
+    // RAY PICKED DATA
+    glm::vec2 uvFromRay(glm::vec3 origin, glm::vec3 direction) const;
+    glm::vec3 rayIntersection(glm::vec3 origin, glm::vec3 direction) const;
+
 
 
 
