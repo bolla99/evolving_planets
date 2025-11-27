@@ -13,6 +13,8 @@ public:
     virtual ~IMeshLoader() = default;
     [[nodiscard]] virtual std::shared_ptr<Mesh> loadMesh(
         const std::string& path) const = 0;
+
+    virtual void saveMesh(const std::string& path, std::shared_ptr<Mesh> mesh) const = 0;
 };
 
 #endif //IMESHLOADER_HPP

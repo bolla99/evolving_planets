@@ -12,6 +12,8 @@
 #include "assimp/postprocess.h"
 #include <Core/VertexAttributeEnums.hpp>
 
+#include "assimp/Exporter.hpp"
+
 class AssimpMeshLoader : public IMeshLoader
 {
 public:
@@ -151,6 +153,79 @@ public:
             vertexData,
             faces
         );
+    }
+
+    void saveMesh(const std::string& path, std::shared_ptr<Mesh> mesh) const override
+    {
+        Assimp::Exporter exporter;
+
+        // build aiScene
+        auto scene = new aiScene();
+        scene->mNumMaterials = 1;
+        scene->mMaterials = new aiMaterial*[1];
+        scene->mMaterials[0] = new aiMaterial();
+        scene->mRootNode = new aiNode();
+        scene->mRootNode->mNumMeshes = 1;
+        scene->mRootNode->mMeshes = new unsigned int[1];
+        scene->mRootNode->mMeshes[0] = 0;
+        // set n meshes = 1
+        scene->mNumMeshes = 1;
+        // create the meshes array
+        scene->mMeshes = new aiMesh*[1];
+
+        // create mesh and set to scene
+        auto assimpMesh = new aiMesh();
+        scene->mMeshes[0] = assimpMesh;
+
+        // set primitive type to triangle
+        assimpMesh->mPrimitiveTypes = aiPrimitiveType_TRIANGLE;
+
+        assimpMesh->mNumVertices = static_cast<unsigned int>(mesh->getNumVertices());
+        assimpMesh->mVertices = new aiVector3D[assimpMesh->mNumVertices];
+
+        // fill the vertices
+        for (unsigned int i = 0; i < assimpMesh->mNumVertices; ++i)
+            assimpMesh->mVertices[i] = aiVector3D(mesh->getVertices()[i].x, mesh->getVertices()[i].y, mesh->getVertices()[i].z);
+
+        // fill the normals
+        if (mesh->HasAttribute(Core::Normal))
+        {
+            auto normals = mesh->getNormals();
+            assimpMesh->mNormals = new aiVector3D[assimpMesh->mNumVertices];
+            auto meshNormals = mesh->getNormals();
+            for (unsigned int i = 0; i < assimpMesh->mNumVertices; ++i)
+            {
+                assimpMesh->mNormals[i] = aiVector3D(meshNormals[i].x, meshNormals[i].y, meshNormals[i].z);
+            }
+        }
+
+        // fill the texture coordinates
+        if (mesh->HasAttribute(Core::TexCoord))
+        {
+            auto meshTC = mesh->getTextureCoordinated();
+            assimpMesh->mTextureCoords[0] = new aiVector3D[assimpMesh->mNumVertices];
+            assimpMesh->mNumUVComponents[0] = 2;
+            for (unsigned int i = 0; i < assimpMesh->mNumVertices; ++i)
+                assimpMesh->mTextureCoords[0][i] = aiVector3D(meshTC[i].x, meshTC[i].y, 0.0f);
+        }
+
+        // add faces
+        assimpMesh->mNumFaces = static_cast<unsigned int>(mesh->getNumFaces());
+        assimpMesh->mFaces = new aiFace[assimpMesh->mNumFaces];
+        for (unsigned int i = 0; i < assimpMesh->mNumFaces; ++i)
+        {
+            assimpMesh->mFaces[i].mNumIndices = 3;
+            assimpMesh->mFaces[i].mIndices = new unsigned int[3];
+            assimpMesh->mFaces[i].mIndices[0] = mesh->getFacesData()[i * 3];
+            assimpMesh->mFaces[i].mIndices[1] = mesh->getFacesData()[i * 3 + 1];
+            assimpMesh->mFaces[i].mIndices[2] = mesh->getFacesData()[i * 3 + 2];
+        }
+        auto ret = exporter.Export(scene, "obj", path);
+        if (ret != aiReturn_SUCCESS) {
+            std::cerr << "Export failed: " << exporter.GetErrorString() << std::endl;
+        }
+        delete scene;
+
     }
 };
 
