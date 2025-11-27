@@ -1,31 +1,15 @@
 #include <genetic.hpp>
+#include <assert.h>
+#include <ctime>
 
 template <typename T>
 void IEvolutionaryAlgorithm<T>::loop() {
-
-    meanFitness = 0.0f;
-    meanError = 0.0f;
     std::cout << "Epoch: " << epoch << std::endl;
     // Implement the main loop of the genetic algorithm
     mutation();
     crossover();
     selection();
     epoch++;
-    for (int i = 0; i < population.size(); i++)
-    {
-        meanFitness += fitnessValues[i];
-    }
-    meanFitness /= static_cast<float>(population.size());
-
-    for (int i = 0; i < population.size(); i++)
-    {
-        auto diff = fitnessValues[i] - meanFitness;
-        meanError += diff;
-    }
-    meanError /= static_cast<float>(population.size());
-    lastMeanFitness = meanFitness;
-    std::cout << "mean fitness: " << meanFitness << std::endl;
-    std::cout << std::endl;
 }
 
 
@@ -50,8 +34,17 @@ PlanetGA::PlanetGA(
     int gravityComputationTubesResolution,
     float autointersectionStep,
     bool immigrationReplaceWithMutatedSphere,
-    int nImmigrationMutations
-    ) : _nParallels(nParallels),
+    int nImmigrationMutations,
+    float diversityLimit,
+    float fitnessThreshold,
+    int epochWithNoImprovement,
+    int maxIterations,
+    bool adaptiveMutationRate,
+    int fitnessType,
+    float distanceFromSurface,
+    int immigrationType
+    ) : _size(size),
+        _nParallels(nParallels),
         _nMeridians(nMeridians),
         _radius(radius),
         _nInitMutations(nInitMutations),
@@ -70,78 +63,55 @@ PlanetGA::PlanetGA(
         _gravityComputationTubesResolution(gravityComputationTubesResolution),
         _autointersectionStep(autointersectionStep),
         _immigrationReplaceWithMutatedSphere(immigrationReplaceWithMutatedSphere),
-        _nImmigrationMutations(nImmigrationMutations)
+        _nImmigrationMutations(nImmigrationMutations),
+        _diversityLimit(diversityLimit),
+        _fitnessThreshold(fitnessThreshold),
+        _epochWithNoImprovement(epochWithNoImprovement),
+        _maxIterations(maxIterations),
+        _adaptiveMutationRate(adaptiveMutationRate),
+        _fitnessType(fitnessType),
+        _distanceFromSurface(distanceFromSurface),
+        _immigrationType(immigrationType)
 {
-    std::cout << "initializing population" << std::endl;
-    population = std::vector<std::shared_ptr<Planet>>(size);
-    nextGeneration = std::vector<std::shared_ptr<Planet>>(size);
-    fitnessValues = std::vector(size, 0.0f);
-    for (int i = 0; i < size; i++)
-    {
-        std::cout << "initializing individual " << i << " ";
-        currentInitializingIndividual = i;
-        population[i] = Planet::sphere(nParallels, nMeridians, radius);
-        //std::cout << "initializing individual " << i << std::endl;
-        for (int j = 0; j < nInitMutations; j++)
-            population[i]->mutate(mutationMinDistance, mutationMaxDistance, autointersectionStep);
-
-        //population[i]->laplacianSmoothing(0.1f);
-        population[i]->polesSmoothing();
-
-        fitnessValues[i] = PlanetGA::fitness(*population[i]);
-        std::cout << "with fitness: " << fitnessValues[i] << std::endl;
-    }
-    auto meanFitness = 0.0f;
-    for (int i = 0; i < fitnessValues.size(); i++) meanFitness += fitnessValues[i];
-    std::cout << "initialization done with mean fitness: " << meanFitness / static_cast<float>(fitnessValues.size()) << std::endl;
+    // initialize population and next generation vectors
+    population = std::vector<std::shared_ptr<Planet>>(_size);
+    for (int i = 0; i < _size; i++) { population[i] = Planet::sphere(_nParallels, _nMeridians, _radius); }
+    nextGeneration = std::vector<std::shared_ptr<Planet>>(_size);
+    
+    // init empty fitness values
+    fitnessValues = std::vector<std::vector<float>>();
+    meanFitness = std::vector<float>();
 }
 
+bool PlanetGA::initialize()
+{
+    if (_initialized) { return false; }
+    
+    for (int j = 0; j < _nInitMutations; j++)
+    {
+        population[_currentIndividualBeingInitialized]->mutate(_mutationMinDistance, _mutationMaxDistance, _autointersectionStep);
+    }
+    if (_currentIndividualBeingInitialized == population.size() - 1) {
+        updateFitness();
+        updateDiversity();
+        
+        _initialized = true;
+        return false;
+    }
+    _currentIndividualBeingInitialized++;
+    return true;
+}
+
+// immigration -> super.loop -> update analysis data -> update termination data
 void PlanetGA::loop()
 {
-    if (_immigration)
-    {
-        /*
-        for (int i = 0; i < _immigrationNewIndividuals; i++) {
-            int id = rand() % population.size();
-            population[id] = Planet::sphere(_nParallels, _nMeridians, _radius);
-            for (int j = 0; j < _nInitMutations; j++)
-                population[id]->mutate(_mutationMinDistance, _mutationMaxDistance, _autointersectionStep);
-        }
-        */
-        // alternative implementation: instead of creating brand new individuals, take those already existing
-        // and mutate them stochastically to create new individuals with similar fitness but different
-        /*
-        for (int i = 0; i < _immigrationNewIndividuals; i++) {
-            int id = rand() % population.size();
-            for (int i = 0; i < _nInitMutations; i++)
-                population[id]->mutate(_mutationMinDistance, _mutationMaxDistance, _autointersectionStep);
-        }
-        */
-
-        // third option -> mutate already existing planets, like the previous one, but choose the one with the highest
-        // similarity with respect to the rest of the population
-        auto minDiversities = Planet::minDiversities(population);
-        auto indices = std::vector<int>(population.size());
-        for (int i = 0; i < population.size(); i++) indices[i] = i;
-        auto sortedIndices = std::ranges::partial_sort(
-            indices,
-            indices.begin() + _immigrationNewIndividuals,
-            [&minDiversities](int a, int b) { return minDiversities[a] < minDiversities[b]; }
-            );
-        // mutate the _immigrationNewIndividuals individuals with minor diversity
-        for (int i = 0; i < _immigrationNewIndividuals; i++)
-        {
-            if (_immigrationReplaceWithMutatedSphere)
-                population[indices[i]] = Planet::sphere(_nParallels, _nMeridians, _radius);
-
-            // perform _nInitMutations
-            for (int k = 0; k < _nImmigrationMutations; k++)
-            {
-                population[indices[i]]->mutate(_mutationMinDistance, _mutationMaxDistance, _autointersectionStep);
-            }
-        }
-    }
+    handleImmigration();
     IEvolutionaryAlgorithm::loop();
+
+    updateDiversity();
+    updateFitness();
+    updateTerminationData();
+    updateError();
 }
 
 
@@ -170,7 +140,7 @@ void PlanetGA::mutation()
                 _autointersectionStep // auto intersection step
             ))
             {
-                planetR1->polesSmoothing();
+                //planetR1->polesSmoothing();
                 successfulMutations++;
                 nextGeneration[i] = planetR1;
                 break;
@@ -190,37 +160,20 @@ void PlanetGA::crossover()
         auto success = false;
         auto child = std::make_shared<Planet>(*population[i]);
 
-        // three attempts
+        auto step = 0.5f / static_cast<float>(_crossoverAttempts);
         for (int j = 0; j < _crossoverAttempts; j++) {
             bool crossoverResult = false;
-            switch (_crossoverType)
-            {
-            case Continuous: crossoverResult = population[i]->continuousCrossover(
+            crossoverResult = population[i]->uniformCrossover(
                 *nextGeneration[i],
                 *child,
-                0.5f,
+                0.5f - step * static_cast<float>(j),
                 _autointersectionStep
-                ); break;
-            case Uniform: crossoverResult = population[i]->uniformCrossover(
-                *nextGeneration[i],
-                *child,
-                0.5f,
-                _autointersectionStep
-                ); break;
-            case ParallelWiseUniform: crossoverResult = population[i]->parallelWiseUniformCrossover(
-                *nextGeneration[i],
-                *child,
-                0.5f,
-                _autointersectionStep
-                ); break;
-            default: throw std::runtime_error("Unknown crossover type");
-            }
+                );
 
             if (crossoverResult)
             {
                 successfulCrossovers++;
                 nextGeneration[i] = child;
-                nextGeneration[i]->polesSmoothing();
                 success = true;
                 break;
             }
@@ -239,7 +192,6 @@ void PlanetGA::crossover()
                     success = true;
                     fallbackCrossovers++;
                     nextGeneration[i] = child;
-                    nextGeneration[i]->polesSmoothing();
                     break;
                 }
             }
@@ -250,7 +202,6 @@ void PlanetGA::crossover()
             {
                 nextGeneration[i]->mutate(_mutationMinDistance, _mutationMaxDistance, _autointersectionStep);
             }
-            nextGeneration[i]->polesSmoothing();
         }
     }
     std::cout << "crossover done with success: " << 100.0f * static_cast<float>(successfulCrossovers) / static_cast<float>(population.size()) << "%" << std::endl;
@@ -260,38 +211,28 @@ void PlanetGA::crossover()
 
 void PlanetGA::selection()
 {
+    auto diversities = Planet::minDiversities(population);
+    auto nextGenerationDiversities = Planet::minDiversities(population);
     for (int i = 0; i < population.size(); i++)
     {
         auto xFitness = fitness(*population[i]);
-        float xFitnessWithDiversity = xFitness;
-        float diversity = 0.0f;
-        for (int j = 0; j < population.size(); j++) {
-            diversity += population[i]->diversity(*population[j]);
-        }
-        diversity /= static_cast<float>(population.size());
-        xFitnessWithDiversity += -_diversityCoefficient * diversity;
+        float xFitnessWithDiversity = xFitness - _diversityCoefficient * diversities[i];
 
         auto uFitness = fitness(*nextGeneration[i]);
-        float uFitnessWithDiversity = uFitness;
-        diversity = 0.0f;
-        for (int j = 0; j < population.size(); j++) {
-            diversity += nextGeneration[i]->diversity(*nextGeneration[j]);
-        }
-        diversity /= static_cast<float>(population.size());
-        uFitnessWithDiversity += -_diversityCoefficient * diversity;
+        float uFitnessWithDiversity = uFitness - _diversityCoefficient * nextGenerationDiversities[i];
 
         if (xFitnessWithDiversity > uFitnessWithDiversity)
         {
             population[i] = nextGeneration[i];
-            fitnessValues[i] = uFitness;
+            //fitnessValues[i] = uFitness;
         }
         else
         {
-            fitnessValues[i] = xFitness;
+            //fitnessValues[i] = xFitness;
         }
     }
-    //std::cout << "selection done" << std::endl;
 }
+
 float PlanetGA::fitness(const Planet& individual)
 {
     // get positions
@@ -305,17 +246,40 @@ float PlanetGA::fitness(const Planet& individual)
     auto mesh = Mesh::fromPlanet(individual, glm::vec4(1.0f, 0.0f, 1.0f, 1.0f), step);
     auto gc = GravityAdapter::GravityComputer(*mesh, _gravityComputationTubesResolution);
     auto fitnessValue = 0.0f;
-    auto gravities = gc.getGravitiesGPU(positions);
     auto d = 0;
-    for (int i = 0; i < positions.size(); i++)
+    auto centerOfMass = individual.massCenter();
+    if (_fitnessType == 0)
     {
-        auto newFitness = glm::dot(glm::normalize(-normals[i]), glm::normalize(gravities[i]));
-        if (std::isnan(newFitness))
+        auto gravities = gc.getGravitiesGPU(positions);
+        for (int i = 0; i < positions.size(); i++)
         {
-            continue;
+            auto newFitness = glm::dot(glm::normalize(-normals[i]), glm::normalize(gravities[i]));
+            if (std::isnan(newFitness))
+            {
+                continue;
+            }
+            d++;
+            fitnessValue += newFitness;
         }
-        d++;
-        fitnessValue += newFitness;
+    }
+    else if (_fitnessType == 1)
+    {
+        for (int i = 0; i < positions.size(); i++)
+        {
+            positions[i] -= _distanceFromSurface * (centerOfMass - positions[i]);
+        }
+        auto gravities = gc.getGravitiesGPU(positions);
+        for (int i = 0; i < positions.size(); i++)
+        {
+            auto newFitness = glm::dot(glm::normalize(centerOfMass - positions[i]), glm::normalize(gravities[i]));
+            if (std::isnan(newFitness))
+            {
+                continue;
+            }
+            d++;
+            fitnessValue += newFitness;
+        }
+
     }
     //std::cout << "fitness value: " << fitnessValue << std::endl;
     //std::cout << "positions size: " << positions.size() << std::endl;
@@ -323,4 +287,226 @@ float PlanetGA::fitness(const Planet& individual)
         throw std::runtime_error("NaN fitness value");
     return fitnessValue / static_cast<float>(d);
 }
+
+bool PlanetGA::shouldTerminate() const
+{
+    if (epoch > _maxIterations) return true;
+    if (meanDiversity < _diversityLimit) return true;
+    if (_currentEpochsWithoutImprovement >= _epochWithNoImprovement) return true;
+    return false;
+}
+
+float PlanetGA::getDiversity(int i) const
+{
+    if (i < 0 || i >= population.size()) { throw std::runtime_error("Invalid index"); }
+    else { return diversityValues[i];}
+}
+std::vector<float> PlanetGA::getDiversityValues() const
+{
+    return diversityValues;
+}
+float PlanetGA::getMeanDiversity() const
+{
+    return meanDiversity;
+}
+std::vector<std::vector<float>> PlanetGA::getFitnessValues() const
+{
+    return fitnessValues;
+}
+std::vector<float> PlanetGA::getMeanFitness() const
+{
+    return meanFitness;
+}
+
+int PlanetGA::currentIndividualBeingInitialized() const
+{
+    return _currentIndividualBeingInitialized;
+}
+bool PlanetGA::hasInitialized() const
+{
+    return _initialized;
+}
+
+// to be called after construction in place of initialize() cycle by feeding
+// with a PlanetsPopulation object
+bool PlanetGA::initByPopulation(const PlanetsPopulation& p) {
+    assert(!_initialized);
+    _size = static_cast<int>(p.planets().size());
+    _nParallels = p.vSize();
+    _nMeridians = p.uSize();
+    _radius = p.radius();
+    population = std::vector<std::shared_ptr<Planet>>(_size);
+    for (int i = 0; i < _size; i++) {
+        population[i] = std::make_shared<Planet>(p.planets()[i]);
+    }
+    // update next generation size
+    nextGeneration = std::vector<std::shared_ptr<Planet>>(_size);
+    updateFitness();
+    updateDiversity();
+    _initialized = true;
+    _currentIndividualBeingInitialized = _size;
+    return true;
+}
+
+// update fitness values
+void PlanetGA::updateFitness() {
+    // compute new fitness values and new mean fitness
+    auto newFitnessValues = std::vector<float>(population.size());
+    auto newMeanFitness = 0.0f;
+    for (int i = 0; i < population.size(); i++) {
+        auto value = fitness(*population[i]);
+        newFitnessValues[i] = value;
+        newMeanFitness += newFitnessValues[i];
+    }
+    newMeanFitness /= population.size();
+    
+    // push back values for past epoch
+    fitnessValues.push_back(newFitnessValues);
+    meanFitness.push_back(newMeanFitness);
+}
+
+// update diversity values and mean diversity
+void PlanetGA::updateDiversity() {
+    diversityValues = Planet::minDiversities(population);
+    for (int i = 0; i < diversityValues.size(); i++) meanDiversity += diversityValues[i];
+    meanDiversity /= static_cast<float>(diversityValues.size());
+}
+
+float PlanetGA::getLastMeanFitness() const {
+    return meanFitness[meanFitness.size() - 1];
+}
+
+std::vector<float> PlanetGA::getLastFitnessValues() const {
+    return fitnessValues[fitnessValues.size() - 1];
+}
+   
+void PlanetGA::updateError() {
+    // update error value
+    for (int i = 0; i < population.size(); i++)
+    {
+        auto diff = fitnessValues[epoch - 1][i] - meanFitness[epoch - 1];
+        meanError += diff;
+    }
+    meanError /= static_cast<float>(population.size());
+}
+
+void PlanetGA::updateTerminationData() {
+    // update termination data
+    assert(epoch == meanFitness.size() - 1);
+    if (epoch >= 1) {
+        if (abs(meanFitness[epoch] - meanFitness[epoch - 1]) < _fitnessThreshold)
+            _currentEpochsWithoutImprovement++;
+        else _currentEpochsWithoutImprovement = 0;
+    }
+}
+
+void PlanetGA::handleImmigration() {
+    if (!_immigration) return;
+    
+    if (_immigrationType == 0) {
+        for (int i = 0; i < _immigrationNewIndividuals; i++) {
+            int id = rand() % population.size();
+            if (_immigrationReplaceWithMutatedSphere)
+                population[id] = Planet::sphere(_nParallels, _nMeridians, _radius);
+            for (int j = 0; j < _nInitMutations; j++)
+                population[id]->mutate(_mutationMinDistance, _mutationMaxDistance, _autointersectionStep);
+        }
+        return;
+    }
+    
+    if (_immigrationType == 1) {
+        
+        // third option -> mutate already existing planets, like the previous one, but choose the one with the highest
+        // similarity with respect to the rest of the population
+        auto indices = std::vector<int>(population.size());
+        for (int i = 0; i < population.size(); i++) indices[i] = i;
+        auto sortedIndices = std::ranges::partial_sort(
+                                                       indices,
+                                                       indices.begin() + _immigrationNewIndividuals,
+                                                       [this](int a, int b) { return diversityValues[a] < diversityValues[b]; }
+                                                       );
+        // mutate the _immigrationNewIndividuals individuals with minor diversity
+        for (int i = 0; i < _immigrationNewIndividuals; i++)
+        {
+            if (_immigrationReplaceWithMutatedSphere)
+                population[indices[i]] = Planet::sphere(_nParallels, _nMeridians, _radius);
+            
+            // perform _nInitMutations
+            for (int k = 0; k < _nImmigrationMutations; k++)
+            {
+                population[indices[i]]->mutate(_mutationMinDistance, _mutationMaxDistance, _autointersectionStep);
+            }
+        }
+        return;
+    }
+}
+
+std::vector<float> PlanetGA::getMeanErrors() const {
+    auto errors = std::vector<float>(fitnessValues.size());
+    for (int i = 0; i < fitnessValues.size(); i++) {
+        for(int j = 0; j < population.size(); j++) {
+            errors[i] += fabs((fitnessValues[i][j] - meanFitness[i]));
+        }
+        errors[i] /= population.size();
+    }
+    return errors;
+}
+
+std::string PlanetGA::log() const {
+    std::string s = "";
+    auto date = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    s += "algorithm executed at: " + std::string(std::ctime(&date)) + "\n";
+    s += "PARAMETERS:\n\n";
+    s += "size: " + std::to_string(_size) + "\n";
+    s += "nParallels: " + std::to_string(_nParallels) + "\n";
+    s += "nMeridians: " + std::to_string(_nMeridians) + "\n";
+    s += "radius: " + std::to_string(_radius) + "\n";
+    s += "nInitMutations: " + std::to_string(_nInitMutations) + "\n";
+    s += "immigration: " + std::to_string(_immigration) + "\n";
+    s += "immigration new individuals: " + std::to_string(_immigrationNewIndividuals) + "\n";
+    s += "mutation scale: " + std::to_string(_mutationScale) + "\n";
+    s += "mutation min distance: " + std::to_string(_mutationMinDistance) + "\n";
+    s += "mutation max distance: " + std::to_string(_mutationMaxDistance) + "\n";
+    s += "mutation attempts: " + std::to_string(_mutationAttempts) + "\n";
+    s += "crossover attempts: " + std::to_string(_crossoverAttempts) + "\n";
+    s += "crossover fallback to continuous: " + std::to_string(_crossoverFallbackToContinuous) + "\n";
+    s += "crossover fallback attempts: " + std::to_string(_crossoverFallbackAttempts) + "\n";
+    s += "diversity coefficient: " + std::to_string(_diversityCoefficient) + "\n";
+    s += "gravity computation sample size: " + std::to_string(_gravityComputationSampleSize) + "\n";
+    s += "gravity computation tubes resolution: " + std::to_string(_gravityComputationTubesResolution) + "\n";
+    s += "auto intersection step: " + std::to_string(_autointersectionStep) + "\n";
+    
+    s += "immigration type: " + std::to_string(_immigrationType) + "\n";
+    s += "immigration replace with mutated sphere: " + std::to_string(_immigrationReplaceWithMutatedSphere) + "\n";
+    s += "n immigration mutations: " + std::to_string(_nImmigrationMutations) + "\n";
+
+    s += "fitness type: " + std::to_string(_fitnessType) + "\n";
+    s += "distance form surface: " + std::to_string(_distanceFromSurface) + "\n";
+
+    s += "diversity limit: " + std::to_string(_diversityLimit) + "\n";
+    s += "fitness threshold: " + std::to_string(_fitnessThreshold) + "\n";
+    s += "epoch with no improvement: " + std::to_string(_epochWithNoImprovement) + "\n";
+    s += "max iterations: " + std::to_string(_maxIterations) + "\n";
+
+    s += "adaptive mutation rate: " + std::to_string(_adaptiveMutationRate) + "\n";
+    
+    s += "\nEPOCHS: " + std::to_string(fitnessValues.size()) + "\n";
+    s += "\n\nFITNESS VALUES:\n\n";
+    for(int i = 0; i < fitnessValues.size(); i++) {
+        for (int j = 0; j < fitnessValues[i].size(); j++) {
+            s += std::to_string(fitnessValues[i][j]) + " ";
+        }
+        s += "\n";
+    }
+    s += "\n\nMEAN FITNESS:\n\n";
+    for (int i = 0; i < meanFitness.size(); i++) {
+        s += std::to_string(meanFitness[i]) + "\n";
+    }
+    
+    return s;
+}
+
+
+
+
 

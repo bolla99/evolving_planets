@@ -3,6 +3,7 @@
 #include "Planet.hpp"
 #include <Mesh.hpp>
 #include <GravityAdapter.hpp>
+#include <PlanetsPopulation.hpp>
 
 template <typename T>
 class IEvolutionaryAlgorithm
@@ -10,24 +11,41 @@ class IEvolutionaryAlgorithm
 public:
     virtual ~IEvolutionaryAlgorithm() = default;
 
+    
+    // return true if it should be called again, false when initialized is done 
+    virtual bool initialize() = 0;
     virtual void loop();
-
-
-    std::vector<std::shared_ptr<T>> population;
-    std::vector<std::shared_ptr<T>> nextGeneration;
-
-    std::vector<float> fitnessValues;
 
     virtual void mutation() = 0;
     virtual void crossover() = 0;
     virtual void selection() = 0;
     virtual float fitness(const T& individual) = 0;
 
+    virtual bool shouldTerminate() const = 0;
+
+    virtual float getDiversity(int i) const = 0;
+    virtual std::vector<float> getDiversityValues() const = 0;
+    virtual float getMeanDiversity() const = 0;
+    virtual std::vector<std::vector<float>> getFitnessValues() const = 0;
+    virtual std::vector<float> getMeanFitness() const = 0;
+    virtual float getLastMeanFitness() const = 0;
+    virtual std::vector<float> getLastFitnessValues() const = 0;
+    virtual std::vector<float> getMeanErrors() const = 0;
+
+    virtual int currentIndividualBeingInitialized() const = 0;
+    virtual bool hasInitialized() const = 0;
+
+    std::vector<std::shared_ptr<T>> population;
+    std::vector<std::shared_ptr<T>> nextGeneration;
+    std::vector<std::vector<float>> fitnessValues;
+    std::vector<float> diversityValues;
+
     int epoch = 0;
-    float meanFitness = 0.0f;
-    float lastMeanFitness = 0.0f;
+    std::vector<float> meanFitness;
+    float meanDiversity = 0.0f;
     float meanError = 0.0f;
-    int currentInitializingIndividual = 0;
+    
+    virtual std::string log() const = 0;
 };
 
 enum CrossoverType
@@ -60,12 +78,23 @@ public:
         int gravityComputationTubesResolution = 32,
         float autointersectionStep = 0.01f,
         bool immigrationReplaceWithMutatedSphere = false,
-        int nImmigrationMutations = 30
+        int nImmigrationMutations = 30,
+        float diversityLimit = 0.1f,
+        float fitnessThreshold = 0.001f,
+        int epochWithNoImprovement = 20,
+        int maxIterations = 1000,
+        bool adaptiveMutationRate = false,
+        int fitnessType = 0,
+        float distanceFromSurface = 0.0f,
+        int immigrationType = 0
         );
 
     PlanetGA& nParallels(int nParallels) { _nParallels = nParallels; return *this; }
     PlanetGA& nMeridians(int nMeridians) { _nMeridians = nMeridians; return *this; }
     PlanetGA& radius(float radius) { _radius = radius; return *this; }
+    int nParallels() { return _nParallels; }
+    int nMeridians() { return _nMeridians; }
+    float radius() { return _radius; }
     PlanetGA& nInitMutations(int nInitMutations) { _nInitMutations = nInitMutations; return *this; }
     PlanetGA& immigration(bool immigration) { _immigration = immigration; return *this; }
     PlanetGA& immigrationNewIndividuals(int immigrationNewIndividuals) { _immigrationNewIndividuals = immigrationNewIndividuals; return *this; }
@@ -83,14 +112,43 @@ public:
     PlanetGA& autointersectionStep(float autointersectionStep) { _autointersectionStep = autointersectionStep; return *this; }
     PlanetGA& immigrationReplaceWithMutatedSphere(bool immigrationReplaceWithMutatedSphere) { _immigrationReplaceWithMutatedSphere = immigrationReplaceWithMutatedSphere; return *this; }
     PlanetGA& nImmigrationMutations(int nImmigrationMutations) { _nImmigrationMutations = nImmigrationMutations; return *this; }
+    PlanetGA& diversityLimit(float diversityLimit) { _diversityLimit = diversityLimit; return *this; }
+    PlanetGA& fitnessThreshold(float fitnessThreshold) { _fitnessThreshold = fitnessThreshold; return *this; }
+    PlanetGA& epochWithNoImprovement(int epochWithNoImprovement) { _epochWithNoImprovement = epochWithNoImprovement; return *this; }
+    PlanetGA& maxIterations(int maxIterations) { _maxIterations = maxIterations; return *this; }
+    PlanetGA& adaptiveMutationRate(bool adaptiveMutationRate) { _adaptiveMutationRate = adaptiveMutationRate; return *this; }
+    PlanetGA& fitnessType(int fitnessType) { _fitnessType = fitnessType; return *this; }
+    PlanetGA& distanceFromSurface(float distanceFromSurface) { _distanceFromSurface = distanceFromSurface; return *this; }
+    PlanetGA& immigrationType(int immigrationType) { _immigrationType = immigrationType; return *this; }
 
     void loop() override;
+    bool initialize() override;
     void mutation() override;
     void crossover() override;
     void selection() override;
     float fitness(const Planet& individual) override;
 
+    bool shouldTerminate() const override;
+
+    float getDiversity(int i) const override;
+    std::vector<float> getDiversityValues() const override;
+    float getMeanDiversity() const override;
+    std::vector<std::vector<float>> getFitnessValues() const override;
+    std::vector<float> getMeanFitness() const override;
+    float getLastMeanFitness() const override;
+    std::vector<float> getLastFitnessValues() const override;
+    std::vector<float> getMeanErrors() const override;
+
+
+    int currentIndividualBeingInitialized() const override;
+    bool hasInitialized() const override;
+    
+    bool initByPopulation(const PlanetsPopulation& p);
+    
+    std::string log() const override;
+
 private:
+    int _size;
     int _nParallels;
     int _nMeridians;
     float _radius;
@@ -109,17 +167,30 @@ private:
     int _gravityComputationSampleSize;
     int _gravityComputationTubesResolution;
     float _autointersectionStep;
+    
+    int _immigrationType;
     bool _immigrationReplaceWithMutatedSphere;
     int _nImmigrationMutations;
+
+    int _fitnessType;
+    float _distanceFromSurface;
+
+    float _diversityLimit;
+    float _fitnessThreshold;
+    int  _epochWithNoImprovement;
+    int _currentEpochsWithoutImprovement = 0;
+    int _maxIterations;
+
+    int _currentIndividualBeingInitialized = 0;
+    bool _initialized = false;
+
+    bool _adaptiveMutationRate;
+    
+    void updateFitness();
+    void updateDiversity();
+    void updateError();
+    void updateTerminationData();
+    void handleImmigration();
 };
 
-class CMA : public IEvolutionaryAlgorithm<Planet>
-{
-public:
-    explicit CMA(int size);
 
-    void mutation() override;
-    void crossover() override;
-    void selection() override;
-    float fitness(const Planet& individual) override;
-};
