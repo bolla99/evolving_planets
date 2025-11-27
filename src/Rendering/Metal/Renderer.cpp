@@ -105,6 +105,16 @@ namespace Rendering::Metal
         // encoder ownership is never obtained
         // an eventual abstract wrapper should not take ownership of the encoder
         const auto encoder = buffer->renderCommandEncoder(passDescriptor.get());
+        
+        // SET DRAWABLE SIZE BUFFER
+        float drawableSize[2] = {
+            (float)_drawable->texture()->width(),
+            (float)_drawable->texture()->height()
+        };
+        
+        encoder->setViewport({drawableSize[0] / 3.0f, 0.0f, 2.0f * (drawableSize[0] / 3.0f), 3.0f * drawableSize[1] / 4.0f, 0, 1});
+         
+        //encoder->setViewport({0, 0, drawableSize[0], drawableSize[1], 0, 1});
 
         ImGui_ImplMetal_NewFrame(passDescriptor.get());
         ImGui_ImplSDL2_NewFrame();
@@ -145,27 +155,25 @@ namespace Rendering::Metal
             0,
             28 // buffer index 1
         );
-
-        // SET DRAWABLE SIZE BUFFER
-        float drawableSize[2] = {
-            (float)_drawable->texture()->width(),
-            (float)_drawable->texture()->height()
-        };
+        
         auto drawableSizeBuffer = NS::TransferPtr(_device->newBuffer(
             &drawableSize,
             2 * sizeof(float),
             MTL::ResourceStorageModeShared
         ));
+        /*
         encoder->setVertexBuffer(
             drawableSizeBuffer.get(),
             0,
             20 // buffer index 2
-        );
-
+        );*/
+        
+        auto aspectRatio = 2.0f * (drawableSize[0] / 3.0f) / drawableSize[1];
+        //auto aspectRatio = drawableSize[0] / drawableSize[1];
 
         const auto viewProjectionMatrix = glm::perspective(
             glm::radians(55.0f),
-            (float)_drawable->texture()->width() / (float)_drawable->texture()->height(),
+            aspectRatio,
             0.1f,
             1000.0f) * viewMatrix;
 
@@ -202,7 +210,12 @@ namespace Rendering::Metal
         }
 
 
-        _debugUICallback();
+        try {
+            _debugUICallback();
+        } catch(std::exception& e) {
+            encoder->endEncoding();
+            throw std::runtime_error(e.what());
+        }
 
         ImGui::Render();
         ImGui_ImplMetal_RenderDrawData(ImGui::GetDrawData(), buffer, encoder);
