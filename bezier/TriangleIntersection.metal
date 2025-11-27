@@ -17,11 +17,13 @@ struct Result {
 };
 
 // Funzione di confronto tra float3 con tolleranza più stretta
-inline bool float3_equal(float3 a, float3 b, float epsilon = 1e-4) {
-    return all(fabs(a - b) < float3(epsilon));
+inline bool float3_equal(float3 a, float3 b, float segmentLength, float epsilon = 0.001) {
+    epsilon *= segmentLength;
+    return fabs(a.x - b.x) < epsilon && fabs(a.y - b.y) < epsilon && fabs(a.z - b.z) < epsilon;
 }
 
-/*
+constant IntersectionResult IntResF = {float3(0.0f, 0.0f, 0.0f), false};
+
 // Funzione che testa se il segmento [orig, dest] interseca il triangolo (v0, v1, v2)
 IntersectionResult segment_triangle_intersect(float3 orig, float3 dest, float3 v0, float3 v1, float3 v2) {
     const float EPSILON = 1e-6;
@@ -37,29 +39,32 @@ IntersectionResult segment_triangle_intersect(float3 orig, float3 dest, float3 v
     float f = 1.0 / a;
     float3 s = orig - v0;
     float u = f * dot(s, h);
-    if (u < 0.0 || u > 1.0) retur n{float3(0.0f, 0.0f, 0.0f), false};
+    if (u < 0.0 || u > 1.0) return {float3(0.0f, 0.0f, 0.0f), false};
     float3 q = cross(s, edge1);
     float v = f * dot(dir, q);
     if (v < 0.0 || u + v > 1.0) return {float3(0.0f, 0.0f, 0.0f), false};
     float t = f * dot(edge2, q);
 
+    float avgLength = 0.0f;
+    avgLength += length(v2 - v1);
+    avgLength += length(v0 - v2);
+    avgLength += length(v1 - v0);
+    avgLength /= 3.0f;
+
     if (t > EPSILON && t < seg_len - EPSILON) {
-        float3 intersection = orig + normalize(dir) * t;
+        float3 intersection = orig + dir * t;
         // Controlla se il punto coincide con uno dei vertici del segmento
-        if (float3_equal(intersection, orig) || float3_equal(intersection, dest)) return {float3(0.0f, 0.0f, 0.0f), false};
+        if (float3_equal(intersection, orig, avgLength) || float3_equal(intersection, dest, avgLength)) return {float3(0.0f, 0.0f, 0.0f), false};
         // Controlla se il punto coincide con uno dei vertici del triangolo
-        if (float3_equal(intersection, v0) || float3_equal(intersection, v1) || float3_equal(intersection, v2)) return {float3(0.0f, 0.0f, 0.0f), false};
-        return true;
+        if (float3_equal(intersection, v0, avgLength) || float3_equal(intersection, v1, avgLength) || float3_equal(intersection, v2, avgLength)) return {float3(0.0f, 0.0f, 0.0f), false};
+        return {intersection, true};
     }
-    return false;
+    return IntResF;
 }
- */
 
-constant IntersectionResult IntResF = {float3(0.0f, 0.0f, 0.0f), false};
-
+/*
 // Funzione che testa se il segmento [orig, dest] interseca il triangolo (v0, v1, v2)
 IntersectionResult segment_triangle_intersect_right(float3 orig, float3 dest, float3 t1, float3 t2, float3 t3) {
-    //const float EPSILON = 0.0000001;
         float3 e1 = t2 - t1;
         float3 e2 = t3 - t1;
     
@@ -93,6 +98,7 @@ IntersectionResult segment_triangle_intersect_right(float3 orig, float3 dest, fl
         if (float3_equal(intersection, t1) || float3_equal(intersection, t2) || float3_equal(intersection, t3)) return IntResF;
         return {intersection, true};
 }
+*/
 
 IntersectionResult tri_tri_intersect(float3 v0, float3 v1, float3 v2, float3 u0, float3 u1, float3 u2) {
     // Controllo adiacenza: se condividono almeno 2 vertici, sono adiacenti
@@ -101,25 +107,25 @@ IntersectionResult tri_tri_intersect(float3 v0, float3 v1, float3 v2, float3 u0,
     float3 vertsB[3] = {u0, u1, u2};
     for (int i = 0; i < 3; ++i) {
         for (int j = 0; j < 3; ++j) {
-            if (float3_equal(vertsA[i], vertsB[j])) shared++;
+            if (float3_equal(vertsA[i], vertsB[j], 0.01)) shared++;
         }
     }
     if (shared >= 2) return IntResF;
 
     // Testa i 3 lati del primo triangolo contro il secondo
     IntersectionResult res;
-    res = segment_triangle_intersect_right(v0, v1, u0, u1, u2);
+    res = segment_triangle_intersect(v0, v1, u0, u1, u2);
     if (res.found) return res;
-    res = segment_triangle_intersect_right(v1, v2, u0, u1, u2);
+    res = segment_triangle_intersect(v1, v2, u0, u1, u2);
     if (res.found) return res;
-    res = segment_triangle_intersect_right(v2, v0, u0, u1, u2);
+    res = segment_triangle_intersect(v2, v0, u0, u1, u2);
     if (res.found) return res;
     // Testa i 3 lati del secondo triangolo contro il primo
-    res = segment_triangle_intersect_right(u0, u1, v0, v1, v2);
+    res = segment_triangle_intersect(u0, u1, v0, v1, v2);
     if (res.found) return res;
-    res = segment_triangle_intersect_right(u1, u2, v0, v1, v2);
+    res = segment_triangle_intersect(u1, u2, v0, v1, v2);
     if (res.found) return res;
-    res = segment_triangle_intersect_right(u2, u0, v0, v1, v2);
+    res = segment_triangle_intersect(u2, u0, v0, v1, v2);
     if (res.found) return res;
     return IntResF;
 }
