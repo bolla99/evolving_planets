@@ -13,6 +13,17 @@
 #include "glm/ext/scalar_constants.hpp"
 #include "glm/gtc/constants.hpp"
 #include "cereal/cereal.hpp"
+#include <cereal/types/vector.hpp>
+
+
+namespace glm {
+    template<class Archive>
+    void serialize(Archive & ar, vec3 & v)
+    {
+        ar(v.x, v.y, v.z);
+    }
+} // namespace glm
+
 
 /** Planet class represent a B-spline surface
  * It consists of a collection of B-spline that represent
@@ -29,6 +40,7 @@
 class Planet
 {
 public:
+    Planet() = default;
     Planet(int degreeU, int degreeV, const std::vector<std::vector<glm::vec3>>& parallels);
 
     // copy constructor
@@ -107,18 +119,21 @@ public:
     float meanCurvature(float u, float v) const;
     float laplacianCurvature(float u, float v) const;
 
+    [[nodiscard]] glm::vec3 massCenter() const;
 
     [[nodiscard]] std::vector<glm::vec3> controlPoints() const;
-
+    
+    // SERIALIZATION
     template<class Archive>
     void serialize(Archive & archive)
     {
-        archive(_parallels); // serialize things by passing them to the archive
+        archive(_degreeU, _degreeV, _parallels, _knotsU, _knotsV); // serialize things by passing them to the archive
     }
 
-    // result to be deallocated
     static std::vector<std::vector<float>> diversityGrid(const std::vector<std::shared_ptr<Planet>>& planets);
     static std::vector<float> minDiversities(const std::vector<std::shared_ptr<Planet>>& planets);
+
+    [[nodiscard]] bool isAutointersecating(float step = 0.01f) const;
 
 private:
     int _degreeU = 0;
@@ -129,8 +144,6 @@ private:
     std::vector<int> _knotsU;
     // knots for clamped bspline meridians
     std::vector<int> _knotsV;
-
-    [[nodiscard]] bool isAutointersecating(float step = 0.01f) const;
 };
 
 #endif //PLANET_HPP

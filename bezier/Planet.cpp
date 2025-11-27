@@ -581,8 +581,6 @@ bool Planet::mutate(float absMinDistance, float absMaxDistance, float autointers
 {
     //std::cout << "Mutating planet" << std::endl;
 
-    auto mesh = Mesh::fromPlanet(*this, glm::vec4(1.0f, 0.0f, 1.0f, 1.0f), 0.01f);
-
     // control points copy
     auto originalParallels = _parallels;
     // random direction
@@ -758,6 +756,8 @@ bool Planet::mutate(float absMinDistance, float absMaxDistance, float autointers
     */
 
 
+    polesSmoothing();
+    resetPeriodicy();
     if (isAutointersecating(autointersectionStep))
     {
         _parallels = originalParallels;
@@ -875,7 +875,8 @@ bool Planet::isAutointersecating(float step) const {
                   << glm::to_string(intersectedTriangles[3]) << ", "
                   << glm::to_string(intersectedTriangles[4]) << ", "
                   << glm::to_string(intersectedTriangles[5]) << std::endl << "intersection point: " << std::endl
-                  << glm::to_string(intersectedTriangles[6]) << std::endl;*/
+                  << glm::to_string(intersectedTriangles[6]) << std::endl;
+                  */
     }
 
     delete[] debug;
@@ -884,6 +885,8 @@ bool Planet::isAutointersecating(float step) const {
 
 bool Planet::differentialMutate(const Planet& p1, const Planet& p2, float scaleFactor, float autoIntersectionStep)
 {
+    auto originalParallels = _parallels;
+
     auto p1CPs = p1.parallelsCP();
     auto p2CPs = p2.parallelsCP();
     auto difference = std::vector<std::vector<glm::vec3>>();
@@ -905,15 +908,17 @@ bool Planet::differentialMutate(const Planet& p1, const Planet& p2, float scaleF
             _parallels[i][j] += difference[i][j];
         }
     }
+    polesSmoothing();
+    resetPeriodicy();
     // check if the planet is still valid
     if (isAutointersecating(autoIntersectionStep))
     {
         //std::cout << "Differential mutation resulted in an invalid planet, reverting changes." << std::endl;
-        _parallels = p1CPs; // revert to p1 control points
+        //_parallels = p1CPs; // revert to p1 control points
+        _parallels = originalParallels;
         return false;
     }
     //std::cout << "Differential mutation applied successfully." << std::endl;
-    polesSmoothing();
     return true;
 }
 
@@ -928,12 +933,12 @@ bool Planet::continuousCrossover(const Planet& other, Planet& child, float cross
             child._parallels[i][j] = (1.0f - alpha) * _parallels[i][j] + alpha * other._parallels[i][j];
         }
     }
+    child.polesSmoothing();
     child.resetPeriodicy();
     if (child.isAutointersecating(autointersectionStep))
     {
         return false;
     }
-    child.polesSmoothing();
     return true;
 }
 
@@ -982,13 +987,13 @@ bool Planet::uniformCrossover(const Planet& other, Planet& child, float crossove
             }
         }
     }
+    child.polesSmoothing();
     child.resetPeriodicy();
     if (child.isAutointersecating(autointersectionStep))
     {
         //std::cout << "crossover went bad" << std::endl;
         return false;
     }
-    child.polesSmoothing();
     return true;
 }
 
@@ -1327,6 +1332,7 @@ float Planet::gaussCurvature(float u, float v) const
     return value;
 }
 
+// bidimensional grid where the diversity value is stored for each pair of planets
 std::vector<std::vector<float>> Planet::diversityGrid(const std::vector<std::shared_ptr<Planet>>& planets)
 {
     auto grid = std::vector<std::vector<float>>(planets.size());
@@ -1342,27 +1348,46 @@ std::vector<std::vector<float>> Planet::diversityGrid(const std::vector<std::sha
     return grid;
 }
 
+// this function assumes that each planet has minimum diversity with another planet, i.e.
+// has a most similar planet among the others.
+// this functions returns, for each planet, the diversity value with respect to the most similar planet;
+// however, each pair is registered only once: if A and B are the most similar to each other, for A the diversity with
+// B will be returned, while for B, diversity with A will be skipped and it will be retured the diversity
+// value to the second most similar planet.
 std::vector<float> Planet::minDiversities(const std::vector<std::shared_ptr<Planet>>& planets)
 {
     auto grid = diversityGrid(planets);
-    auto result = std::vector<std::pair<float, int>>(planets.size());
+    auto result = std::vector<std::pair<float, int>>();
     for (int i = 0; i < planets.size(); i++)
     {
+        int minIndex = i;
         float min = std::numeric_limits<float>::max();
         for (int j = 0; j < planets.size(); j++)
         {
-            if (j < i && result[j].second == i)
+            if (i == j || (j < i && result[j].second == i))
             {
                 continue;
             }
-            min = std::min(min, grid[i][j]);
+            if (grid[i][j] < min) { min = grid[i][j]; minIndex = j; }
         }
-        result.emplace_back(min, i);
+        result.emplace_back(min, minIndex);
     }
     auto mins = std::vector<float>();
-    for (int i = 0; i < result.size(); i++) mins.push_back(result[i].first);
+    for (auto & i : result) mins.push_back(i.first);
     return mins;
 }
+
+glm::vec3 Planet::massCenter() const {
+    // tessellation
+    auto mesh = Mesh::fromPlanet(*this);
+    auto vertices = mesh->getVertices();
+    auto mC = glm::vec3(0.0f);
+    for (auto & v : vertices) mC += v;
+    return mC / static_cast<float>(vertices.size());
+}
+
+
+
 
 
 
