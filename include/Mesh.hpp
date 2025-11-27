@@ -41,6 +41,9 @@ public:
     [[nodiscard]] std::vector<glm::vec3> getVertices() const;
     [[nodiscard]] std::vector<glm::vec3> getTriangles() const;
 
+    [[nodiscard]] std::vector<glm::vec3> getNormals() const;
+    [[nodiscard]] std::vector<glm::vec2> getTextureCoordinated() const;
+
 
     // FACTORY METHODS
     static std::shared_ptr<Mesh> quad(

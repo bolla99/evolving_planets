@@ -1241,3 +1241,41 @@ glm::vec3 Mesh::rayIntersection(glm::vec3 origin, glm::vec3 direction) const
     }
     return origin + closestDistance * direction;
 }
+
+std::vector<glm::vec3> Mesh::getNormals() const
+{
+    for (size_t i = 0; i < _vertexAttributeNames.size(); ++i)
+    {
+        if (_vertexAttributeNames[i] == Core::VertexAttributeName::Normal)
+        {
+            auto byteNormals = _vertexData[i];
+            auto vecNormals = std::vector<glm::vec3>(_numVertices);
+            for (size_t j = 0; j < _numVertices; ++j)
+            {
+                const auto* fdata = reinterpret_cast<const float*>(byteNormals.data());
+                vecNormals[j] = glm::vec3(fdata[j * 3], fdata[j * 3 + 1], fdata[j * 3 + 2]);
+            }
+            return vecNormals;
+        }
+    }
+    throw std::runtime_error("Mesh does not contain normals");
+}
+
+std::vector<glm::vec2> Mesh::getTextureCoordinated() const
+{
+    for (size_t i = 0; i < _vertexAttributeNames.size(); ++i)
+    {
+        if (_vertexAttributeNames[i] == Core::VertexAttributeName::TexCoord)
+        {
+            auto byteUV = _vertexData[i];
+            auto vecUV = std::vector<glm::vec2>(_numVertices);
+            for (size_t j = 0; j < _numVertices; ++j)
+            {
+                const auto* fdata = reinterpret_cast<const float*>(byteUV.data());
+                vecUV[j] = glm::vec2(fdata[j * 2], fdata[j * 2 + 1]);
+            }
+            return vecUV;
+        }
+    }
+    throw std::runtime_error("Mesh does not contain texture coordinates");
+}
