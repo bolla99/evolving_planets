@@ -31,6 +31,7 @@ public:
     virtual float getLastMeanFitness() const = 0;
     virtual std::vector<float> getLastFitnessValues() const = 0;
     virtual std::vector<float> getMeanErrors() const = 0;
+    virtual float getLastMeanError() const = 0;
 
     virtual int currentIndividualBeingInitialized() const = 0;
     virtual bool hasInitialized() const = 0;
@@ -138,7 +139,7 @@ public:
     float getLastMeanFitness() const override;
     std::vector<float> getLastFitnessValues() const override;
     std::vector<float> getMeanErrors() const override;
-
+    float getLastMeanError() const override;
 
     int currentIndividualBeingInitialized() const override;
     bool hasInitialized() const override;

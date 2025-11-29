@@ -9,7 +9,6 @@ void IEvolutionaryAlgorithm<T>::loop() {
     mutation();
     crossover();
     selection();
-    epoch++;
 }
 
 
@@ -112,6 +111,7 @@ void PlanetGA::loop()
     updateFitness();
     updateTerminationData();
     updateError();
+    epoch++;
 }
 
 
@@ -146,6 +146,8 @@ void PlanetGA::mutation()
                 break;
             }
         }
+        // if failed -> put next generation placeholder to avoid nullptr on first epoch if every mutation fails
+        nextGeneration[i] = Planet::sphere(_nParallels, _nMeridians);
     }
     std::cout << "mutation done with success: " << 100.0f * static_cast<float>(successfulMutations) / static_cast<float>(population.size()) << "%" << std::endl;
 }
@@ -247,7 +249,7 @@ float PlanetGA::fitness(const Planet& individual)
     auto gc = GravityAdapter::GravityComputer(*mesh, _gravityComputationTubesResolution);
     auto fitnessValue = 0.0f;
     auto d = 0;
-    auto centerOfMass = individual.massCenter();
+    auto centerOfMass = gc.massCenter();
     if (_fitnessType == 0)
     {
         auto gravities = gc.getGravitiesGPU(positions);
@@ -451,6 +453,17 @@ std::vector<float> PlanetGA::getMeanErrors() const {
     }
     return errors;
 }
+
+float PlanetGA::getLastMeanError() const {
+    auto size = fitnessValues.size();
+    float error = 0.0f;
+    for(int j = 0; j < population.size(); j++) {
+        error += fabs((fitnessValues[size - 1][j] - meanFitness[size - 1]));
+    }
+    error /= population.size();
+    return error;
+}
+
 
 std::string PlanetGA::log() const {
     std::string s = "";
