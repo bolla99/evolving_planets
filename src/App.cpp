@@ -539,13 +539,17 @@ App& App::run()
                     {
                         ImGui::BeginChild("child window");
                         ImGui::PushItemWidth(80);
-                        ImGui::InputInt("n parallels", &nParallelsCP);
-                        ImGui::InputInt("n meridians", &nMeridiansCP);
-                        ImGui::InputFloat("radius", &radius);
-                        ImGui::SliderFloat("tessellation step", &autointersectionStep, 0.01f, 0.1f, "%.2f");
-                        ImGui::InputInt("population size", &populationSize);
-                        ImGui::Checkbox("init from population file", &initFromPopulationFile);
-                        ImGui::Separator();
+                        if (ImGui::CollapsingHeader("initialization parameters")) {
+                            ImGui::InputInt("n parallels", &nParallelsCP);
+                            ImGui::InputInt("n meridians", &nMeridiansCP);
+                            ImGui::InputFloat("radius", &radius);
+                            ImGui::SliderFloat("tessellation step", &autointersectionStep, 0.01f, 0.1f, "%.2f");
+                            ImGui::InputInt("initial mutations", &initMutations);
+                            ImGui::InputFloat("min distance", &mutationMinDistance);
+                            ImGui::InputFloat("max distance", &mutationMaxDistance);
+                            ImGui::InputInt("population size", &populationSize);
+                            ImGui::Checkbox("init from population file", &initFromPopulationFile);
+                        }
                         if (ImGui::CollapsingHeader("immigration parameters")) {
                             std::vector<const char*> immigrationItems = {"random replacement", "replace the most similar"};
                             ImGui::PushItemWidth(220);
@@ -557,11 +561,6 @@ App& App::run()
                             ImGui::Separator();
                         }
                         if (ImGui::CollapsingHeader("mutation parameters")) {
-                            ImGui::InputInt("initial mutations", &initMutations);
-                            ImGui::InputFloat("min distance", &mutationMinDistance);
-                            ImGui::InputFloat("max distance", &mutationMaxDistance);
-                            ImGui::Separator();
-                            ImGui::Text("Differential mutation parameters:");
                             ImGui::InputInt("mutation attempts", &mutationAttempts);
                             ImGui::InputFloat("mutation scale", &mutationScale);
                         }
@@ -626,6 +625,7 @@ App& App::run()
                             // CREATE EVOLUTIONARY ALGORITHM (SECOND THREAD)
                             if (ImGui::Button("Init Evolutionary Algorithm"))
                             {
+                                currentPlanet = 0;
                                 initShouldStop = false;
                                 // create the evolutionary algorithm
                                 ga = std::make_shared<PlanetGA>(
@@ -740,6 +740,7 @@ App& App::run()
                             ImGui::Text("Looping: %s", looping ? "true" : "false");
                             ImGui::Text("Epoch: %d", ga and ga->hasInitialized() ? ga->epoch : 0);
                             ImGui::Text("Mean Fitness: %.3f", ga and ga->hasInitialized() ? ga->getLastMeanFitness(): 0.0f);
+                            ImGui::Text("Mean Error: %.3f", ga and ga->hasInitialized()? ga->getLastMeanError(): 0.0f);
                             ImGui::Text("Mean Diversity: %.3f", ga and ga->hasInitialized() ? ga->getMeanDiversity() : 0.0f);
                         }
 
