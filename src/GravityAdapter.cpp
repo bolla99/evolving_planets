@@ -81,4 +81,12 @@ namespace GravityAdapter
         return gravityValues;
     }
 
+    glm::vec3 GravityComputer::massCenter() const {
+        glm::vec3 centreOfMass = glm::vec3(0.0f);
+        for (int i = 0; i < _tubes.size(); i++) {
+            centreOfMass += (_tubes[i].t1 + _tubes[i].t2) / 2.0f;
+        }
+        centreOfMass /= _tubes.size();
+        return centreOfMass;
+    }
 }

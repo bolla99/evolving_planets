@@ -119,7 +119,7 @@ public:
     float meanCurvature(float u, float v) const;
     float laplacianCurvature(float u, float v) const;
 
-    [[nodiscard]] glm::vec3 massCenter() const;
+    //[[nodiscard]] glm::vec3 massCenter() const;
 
     [[nodiscard]] std::vector<glm::vec3> controlPoints() const;
     

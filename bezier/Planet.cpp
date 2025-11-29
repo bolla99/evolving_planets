@@ -1377,14 +1377,20 @@ std::vector<float> Planet::minDiversities(const std::vector<std::shared_ptr<Plan
     return mins;
 }
 
-glm::vec3 Planet::massCenter() const {
+/*
+glm::vec3 Planet::massCenter(const GravityAdapter::GravityComputer& gc) const {
     // tessellation
     auto mesh = Mesh::fromPlanet(*this);
-    auto vertices = mesh->getVertices();
-    auto mC = glm::vec3(0.0f);
-    for (auto & v : vertices) mC += v;
-    return mC / static_cast<float>(vertices.size());
+    auto gc = GravityAdapter::GravityComputer(*mesh, 64);
+    auto tubes = gc.getTubes();
+    glm::vec3 centreOfMass = glm::vec3(0.0f);
+    for (int i = 0; i < tubes.size() / 2.0f; i++) {
+        centreOfMass += (tubes[i*2] + tubes[i*2 + 1])/2.0f;
+    }
+    centreOfMass /= (tubes.size() / 2.0f);
+    return centreOfMass;
 }
+ */
 
 
 

@@ -17,6 +17,9 @@ namespace GravityAdapter
         explicit GravityComputer(const Mesh& mesh, int tubesResolution = 64);
 
         std::vector<glm::vec3> getTubes();
+        
+        [[nodiscard]] glm::vec3 massCenter() const;
+
 
         [[nodiscard]] glm::vec3 getGravityCPU(const glm::vec3& position) const;
         [[nodiscard]] glm::vec3 getGravityGPU(const glm::vec3& position) const;
