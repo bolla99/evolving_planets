@@ -1,15 +1,16 @@
-cmake_minimum_required(VERSION 3.31)
+cmake_minimum_required(VERSION 3.26)
 cmake_policy(SET CMP0079 NEW)
 cmake_policy(SET CMP0175 NEW)
 
 project(evolving_planets)
 
 if(APPLE)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0")
     link_directories("/opt/homebrew/opt/libomp/lib/")
     include_directories("/opt/homebrew/opt/libomp/include/")
 endif()
 
-set(CMAKE_BUILD_RPATH APPEND /Library/Frameworks/)
+#set(CMAKE_BUILD_RPATH APPEND /Library/Frameworks/)
 set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};${CMAKE_SOURCE_DIR}/cmake")
 
 include(MetalShaderSupport)
@@ -41,6 +42,10 @@ add_executable(main MACOSX_BUNDLE
         ${RESOURCES}
 )
 
+set_target_properties(main PROPERTIES
+    INSTALL_RPATH "@executable_path/../Frameworks"
+)
+
 add_subdirectory(shaders)
 target_embed_metal_shader_libraries(main
         Shaders
@@ -52,18 +57,21 @@ add_custom_command(TARGET main POST_BUILD
 )
 
 find_package(SDL2 REQUIRED)
+message(STATUS "Contenuto di SDL2_LIBRARY: ${SDL2_LIBRARY}")
 find_package(SDL2_ttf REQUIRED
 )
 if (SDL2_ttf_FOUND)
     message(STATUS "SDL_ttf FOUND")
-    message(STATUS "SDL2_ttf includes: ${SDL2_TTF_INCLUDE_DIRS}")
-    message(STATUS "SDL2_ttf libraries: ${SDL2_TTF_LIBRARIES}")
 endif()
-target_include_directories(main PRIVATE ${SDL2_TTF_INCLUDE_DIRS})
-target_link_libraries(main PRIVATE ${SDL2_TTF_LIBRARIES})
 
+set(ASSIMP_BUILD_SHARED_LIBS OFF CACHE BOOL "Build ASSIMP as static libraries" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build all libraries as static" FORCE)
 add_subdirectory(assimp)
 add_subdirectory(glm)
+#find_package(glm CONFIG REQUIRED)
+
+
+
 add_subdirectory(imgui)
 add_subdirectory(bezier)
 target_include_directories(
@@ -149,9 +157,59 @@ target_link_libraries(main PRIVATE
         genetic
 )
 
-set_target_properties(main PROPERTIES
-        BUILD_RPATH "/Library/Frameworks"
+target_include_directories(main PRIVATE ${GLM_INCLUDE_DIR})
+
+set(SDL2_DYLIB_PATH "/Library/Frameworks/SDL2.framework/Versions/A/SDL2")
+set(SDL2_ttf_DYLIB_PATH "/Library/Frameworks/SDL2_ttf.framework/Versions/A/SDL2_ttf")
+
+# --- BLOCCO CORRETTO PER SDL2_ttf ---
+set(SDL2_ttf_FRAMEWORK_DIR_SRC "/Library/Frameworks/SDL2_ttf.framework")
+
+add_custom_command(
+        TARGET main POST_BUILD
+
+        # 1. Crea la cartella Frameworks
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:main>/../Frameworks/"
+
+        # 2. *** COPIA L'INTERO FRAMEWORK ***
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${SDL2_ttf_FRAMEWORK_DIR_SRC}" # Copia l'intera cartella .framework
+        "$<TARGET_FILE_DIR:main>/../Frameworks/SDL2_ttf.framework" # Destinazione: crea la struttura interna
+
+        # 3. Correzione del percorso (install_name_tool) - Deve rimanere
+        #COMMAND install_name_tool -change
+        #@rpath/SDL2_ttf.framework/Versions/A/SDL2_ttf
+        #@loader_path/../Frameworks/SDL2_ttf.framework/Versions/A/SDL2_ttf
+        #"$<TARGET_FILE:main>"
+        #COMMENT "Copia e corregge SDL2_ttf.framework nel bundle"
 )
+
+# --- BLOCCO CORRETTO PER SDL2_ttf ---
+set(SDL2_FRAMEWORK_DIR_SRC "/Library/Frameworks/SDL2.framework")
+
+add_custom_command(
+        TARGET main POST_BUILD
+
+        # 1. Crea la cartella Frameworks
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:main>/../Frameworks/"
+
+        # 2. *** COPIA L'INTERO FRAMEWORK ***
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${SDL2_FRAMEWORK_DIR_SRC}" # Copia l'intera cartella .framework
+        "$<TARGET_FILE_DIR:main>/../Frameworks/SDL2.framework" # Destinazione: crea la struttura interna
+
+        # 3. Correzione del percorso (install_name_tool) - Deve rimanere
+        #COMMAND install_name_tool -change
+        #@rpath/SDL2.framework/Versions/A/SDL2
+        #@loader_path/../Frameworks/SDL2.framework/Versions/A/SDL2
+        #"$<TARGET_FILE:main>"
+)
+
+
+
+#set_target_properties(main PROPERTIES
+#        BUILD_RPATH "/Library/Frameworks"
+#)
 
 
 # SET UP FOR XCODE
