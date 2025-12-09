@@ -198,6 +198,22 @@ glm::vec3 Planet::vSecondDerivative(float u, float v) const {
 
 glm::vec3 Planet::normal(float u, float v) const
 {
+    if (v < std::numeric_limits<float>::epsilon() and v > -std::numeric_limits<float>::epsilon()) {
+        auto result = glm::vec3(0.0f);
+        auto closeV = std::numeric_limits<float>::epsilon();
+        for (int i = 1; i <= 8; i++) {
+            result += glm::normalize(glm::cross(uFirstDerivative(1.0f / static_cast<float>(i), closeV), vFirstDerivative(1.0f / static_cast<float>(i), closeV)));
+        }
+        return result / static_cast<float>(8);
+    }
+    if (v < 1.0f + std::numeric_limits<float>::epsilon() and v > 1.0f - std::numeric_limits<float>::epsilon()) {
+        auto result = glm::vec3(0.0f);
+        auto closeV = 1 - std::numeric_limits<float>::epsilon();
+        for (int i = 1; i <= 8; i++) {
+            result += glm::normalize(glm::cross(uFirstDerivative(1.0f / static_cast<float>(i), closeV), vFirstDerivative(1.0f / static_cast<float>(i), closeV)));
+        }
+        return result / static_cast<float>(8);
+    }
     return glm::normalize(glm::cross(uFirstDerivative(u, v), vFirstDerivative(u, v)));
 }
 
@@ -353,7 +369,7 @@ float Planet::fitness(float u, float v, const GravityAdapter::GravityComputer& g
     //std::cout << "Normal: " << n.x << ", " << n.y << ", " << n.z << std::endl;
     auto g = gc.getGravityGPU(p);
     //std::cout << "Gravity: " << g.x << ", " << g.y << ", " << g.z << std::endl;
-    auto result = glm::dot(-n, glm::normalize(g));
+    auto result = glm::dot(-glm::normalize(n), glm::normalize(g));
     //std::cout << "Fitness at (" << u << ", " << v << "): " << result << std::endl;
     return result;
 }
@@ -848,9 +864,24 @@ bool Planet::isAutointersecating(float step) const {
     encoder->setBuffer(resultBuffer.get(), 0, 2);
     encoder->setBuffer(debugBuffer.get(), 0, 3);
 
+    /*
+    // set pairs
+    std::vector<uint32_t> pairs;
+    //pairs.reserve(triCount * (triCount - 1) / 2);
+    for (uint32_t i = 0; i < triCount; ++i) {
+        for (uint32_t j = i + 1; j < triCount; ++j) {
+            pairs.push_back(i);
+            pairs.push_back(j);
+        }
+    }
+    auto pairsBuffer = NS::TransferPtr(device->newBuffer(pairs.data(), pairs.size() * sizeof(uint32_t), MTL::ResourceStorageModeShared));
+    encoder->setBuffer(pairsBuffer.get(), 0, 4); // bind a slot 4
+    auto totalPairs = pairs.size() / 2;
+*/
     auto gridSize = MTL::Size::Make(triCount, triCount, 1);
+    //auto gridSize = MTL::Size::Make(totalPairs, 1, 1);
     auto w = pipeline->maxTotalThreadsPerThreadgroup();
-    auto threadgroupSize = MTL::Size::Make(8, 8, 1);
+    auto threadgroupSize = MTL::Size::Make(128, 1, 1);
     encoder->dispatchThreads(gridSize, threadgroupSize);
     encoder->endEncoding();
     commandBuffer->commit();
