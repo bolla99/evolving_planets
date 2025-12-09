@@ -410,7 +410,7 @@ App& App::run()
             ]()
             {
                 // STATIC VARIABLES (HANDLED BY UI)
-                static int nParallelsCP = 14;
+                static int nParallelsCP = 15;
                 static int nMeridiansCP = 14;
                 static float radius = 2.0f;
                 static float autointersectionStep = 0.03f;
@@ -418,7 +418,7 @@ App& App::run()
                 static int nMeridiansDrawn = 50;
                 static bool showParallelsAndMeridians = false;
                 static bool showTubes = false;
-                static int populationSize = 1;
+                static int populationSize = 30;
                 static int initMutations = 20;
                 static int mutationAttempts = 100;
                 static int crossoverAttempts = 100;
@@ -432,13 +432,13 @@ App& App::run()
                 static int immigrationType = 0;
                 static int gravityComputationSampleSize = 32;
                 static int gravityComputationTubesResolution = 32;
-                static float diversityCoefficient = 0.4f;
+                static float diversityCoefficient = 0.2f;
                 static auto debugBallScale = 0.1f;
-                static float diversityLimit = 0.4;
-                static float fitnessThreshold = 0.01;
-                static int  epochWithNoImprovement = 10;
+                static float diversityLimit = 0.1;
+                static float fitnessThreshold = 0.001;
+                static int  epochWithNoImprovement = 100;
                 static int maxIterations = 1000;
-                static bool adaptiveMutationRate = false;
+                static bool adaptiveMutationRate = true;
                 static int fitnessType = 0;
                 static float distanceFromSurface = 0.0f;
                 static bool initFromPopulationFile = false;
@@ -471,6 +471,7 @@ App& App::run()
                     if (curvatureBasedColoring) fitnessBasedColoring = false;
                     dirtyPlanets = true;
                 }
+                 */
                  
                 if (ImGui::Checkbox("Fitness Based Coloring", &fitnessBasedColoring))
                 {
@@ -480,8 +481,9 @@ App& App::run()
                 
                 if (ImGui::Checkbox("Fitness Based Coloring Discrete", &fitnessBasedColoringDiscrete)) dirtyPlanets = true;
                 if (ImGui::SliderFloat("Fitness Based Coloring Discrete Treshold", &fitnessBasedColoringDiscreteTreshold, 0.0f, 1.0f, "%.2f")) dirtyPlanets = true;
-                 */
-                //if (ImGui::Checkbox("Shaded", &shaded)) dirtyPlanets = true;
+                
+                
+                if (ImGui::Checkbox("Shaded", &shaded)) dirtyPlanets = true;
                 
                 /*
                 ImGui::SliderFloat("Debug Ball Scale", &debugBallScale, 0.01f, 1.0f, "%.2f");
@@ -572,12 +574,15 @@ App& App::run()
                         }
                         if (ImGui::CollapsingHeader("fitness parameters")) {
                             
+                            /*
                             std::vector<const char*> fitnessItems = {"g dot surface normal", "g dot p -> mass centre"};
                             ImGui::PushItemWidth(160);
                             ImGui::Combo("fitness model", &fitnessType, fitnessItems.data(), 2);
+                             */
                             ImGui::PushItemWidth(80);
                             //ImGui::InputInt("fitness model", &fitnessType, 1);
-                            ImGui::InputFloat("distance from surface", &distanceFromSurface);
+                            /*
+                            ImGui::InputFloat("distance from surface", &distanceFromSurface);*/
                             
                             ImGui::InputInt("gravity sample res", &gravityComputationSampleSize);
                             ImGui::InputInt("gravity tubes res", &gravityComputationTubesResolution);
@@ -742,6 +747,7 @@ App& App::run()
                             ImGui::Text("Mean Fitness: %.3f", ga and ga->hasInitialized() ? ga->getLastMeanFitness(): 0.0f);
                             ImGui::Text("Mean Error: %.3f", ga and ga->hasInitialized()? ga->getLastMeanError(): 0.0f);
                             ImGui::Text("Mean Diversity: %.3f", ga and ga->hasInitialized() ? ga->getMeanDiversity() : 0.0f);
+                            ImGui::Text("Best: %.3f", ga->getBest());
                         }
 
                         if (ga and ga->hasInitialized() and currentMesh and !looping)
@@ -898,8 +904,8 @@ App& App::run()
                     {
                         currentMesh = Mesh::fromPlanetFitnessColor(
                             *ga->population[currentPlanet],
-                            glm::vec4(0.0f, 0.0f, 0.0f, 1.0f),
-                            glm::vec4(1.0f, 1.0f, 1.0f, 1.0f),
+                            glm::vec4(1.0f, 0.0f, 0.0f, 1.0f),
+                            glm::vec4(0.0f, 1.0f, 0.0f, 1.0f),
                             tessellationResolution,
                             fitnessBasedColoringDiscrete,
                             fitnessBasedColoringDiscreteTreshold);
