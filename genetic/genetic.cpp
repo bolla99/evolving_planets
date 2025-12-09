@@ -86,10 +86,20 @@ bool PlanetGA::initialize()
 {
     if (_initialized) { return false; }
     
+    //int tries = 20000;
+    //int success = 0;
     for (int j = 0; j < _nInitMutations; j++)
     {
+        /*
+        while (!population[_currentIndividualBeingInitialized]->mutate(_mutationMinDistance, _mutationMaxDistance, _autointersectionStep) and tries > 0) {
+            tries--;
+        }
+        if (tries > 0) success++;
+        */
         population[_currentIndividualBeingInitialized]->mutate(_mutationMinDistance, _mutationMaxDistance, _autointersectionStep);
     }
+    
+    //std::cout << "individual " << _currentIndividualBeingInitialized << " initialized with " << success << " successes" << std::endl;
     if (_currentIndividualBeingInitialized == population.size() - 1) {
         updateFitness();
         updateDiversity();
@@ -110,7 +120,7 @@ void PlanetGA::loop()
     updateDiversity();
     updateFitness();
     updateTerminationData();
-    updateError();
+    //updateError();
     epoch++;
 }
 
@@ -147,7 +157,7 @@ void PlanetGA::mutation()
             }
         }
         // if failed -> put next generation placeholder to avoid nullptr on first epoch if every mutation fails
-        nextGeneration[i] = Planet::sphere(_nParallels, _nMeridians);
+        //nextGeneration[i] = population[i];
     }
     std::cout << "mutation done with success: " << 100.0f * static_cast<float>(successfulMutations) / static_cast<float>(population.size()) << "%" << std::endl;
 }
@@ -248,19 +258,24 @@ float PlanetGA::fitness(const Planet& individual)
     auto mesh = Mesh::fromPlanet(individual, glm::vec4(1.0f, 0.0f, 1.0f, 1.0f), step);
     auto gc = GravityAdapter::GravityComputer(*mesh, _gravityComputationTubesResolution);
     auto fitnessValue = 0.0f;
-    auto d = 0;
+    auto d = 0.0f;
     auto centerOfMass = gc.massCenter();
     if (_fitnessType == 0)
     {
         auto gravities = gc.getGravitiesGPU(positions);
+        auto maxGravityMagnitude = -1000.0f;
+        for (auto& g: gravities) {
+            maxGravityMagnitude = std::max(maxGravityMagnitude, glm::length(g));
+        }
         for (int i = 0; i < positions.size(); i++)
         {
             auto newFitness = glm::dot(glm::normalize(-normals[i]), glm::normalize(gravities[i]));
+            newFitness *= (glm::length(gravities[i]) / maxGravityMagnitude);
             if (std::isnan(newFitness))
             {
                 continue;
             }
-            d++;
+            d += glm::length(gravities[i]) / maxGravityMagnitude;
             fitnessValue += newFitness;
         }
     }
@@ -287,7 +302,7 @@ float PlanetGA::fitness(const Planet& individual)
     //std::cout << "positions size: " << positions.size() << std::endl;
     if (std::isnan(fitnessValue / static_cast<float>(d)))
         throw std::runtime_error("NaN fitness value");
-    return fitnessValue / static_cast<float>(d);
+    return fitnessValue / d;
 }
 
 bool PlanetGA::shouldTerminate() const
@@ -381,22 +396,23 @@ float PlanetGA::getLastMeanFitness() const {
 std::vector<float> PlanetGA::getLastFitnessValues() const {
     return fitnessValues[fitnessValues.size() - 1];
 }
-   
+
+/*
 void PlanetGA::updateError() {
     // update error value
     for (int i = 0; i < population.size(); i++)
     {
-        auto diff = fitnessValues[epoch - 1][i] - meanFitness[epoch - 1];
+        auto diff = fitnessValues[fitnessValues.size() - 1][i] - meanFitness[meanFitness.size() - 1];
         meanError += diff;
     }
     meanError /= static_cast<float>(population.size());
 }
+ */
 
 void PlanetGA::updateTerminationData() {
     // update termination data
-    assert(epoch == meanFitness.size() - 1);
     if (epoch >= 1) {
-        if (abs(meanFitness[epoch] - meanFitness[epoch - 1]) < _fitnessThreshold)
+        if (abs(meanFitness[meanFitness.size() - 1] - meanFitness[meanFitness.size() - 2]) < _fitnessThreshold)
             _currentEpochsWithoutImprovement++;
         else _currentEpochsWithoutImprovement = 0;
     }
@@ -445,22 +461,26 @@ void PlanetGA::handleImmigration() {
 
 std::vector<float> PlanetGA::getMeanErrors() const {
     auto errors = std::vector<float>(fitnessValues.size());
-    for (int i = 0; i < fitnessValues.size(); i++) {
+    for (int i = 0; i < errors.size(); i++) {
         for(int j = 0; j < population.size(); j++) {
-            errors[i] += fabs((fitnessValues[i][j] - meanFitness[i]));
+            // quadratic error
+            errors[i] += pow(fitnessValues[i][j] - meanFitness[i], 2);
         }
         errors[i] /= population.size();
+        errors[i] = sqrt(errors[i]);
     }
     return errors;
 }
+
 
 float PlanetGA::getLastMeanError() const {
     auto size = fitnessValues.size();
     float error = 0.0f;
     for(int j = 0; j < population.size(); j++) {
-        error += fabs((fitnessValues[size - 1][j] - meanFitness[size - 1]));
+        error += pow(fitnessValues[size - 1][j] - meanFitness[size - 1], 2);
     }
     error /= population.size();
+    error = sqrt(error);
     return error;
 }
 
@@ -518,6 +538,14 @@ std::string PlanetGA::log() const {
     
     return s;
 }
+
+float PlanetGA::getBest() const {
+    auto values = getLastFitnessValues();
+    auto min = 1000.0f;
+    for (auto& value : values) min = std::min(min, value);
+    return min;
+}
+
 
 
 

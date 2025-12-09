@@ -32,6 +32,7 @@ public:
     virtual std::vector<float> getLastFitnessValues() const = 0;
     virtual std::vector<float> getMeanErrors() const = 0;
     virtual float getLastMeanError() const = 0;
+    virtual float getBest() const = 0;
 
     virtual int currentIndividualBeingInitialized() const = 0;
     virtual bool hasInitialized() const = 0;
@@ -44,7 +45,7 @@ public:
     int epoch = 0;
     std::vector<float> meanFitness;
     float meanDiversity = 0.0f;
-    float meanError = 0.0f;
+    //float meanError = 0.0f;
     
     virtual std::string log() const = 0;
 };
@@ -140,6 +141,8 @@ public:
     std::vector<float> getLastFitnessValues() const override;
     std::vector<float> getMeanErrors() const override;
     float getLastMeanError() const override;
+    float getBest() const override;
+    
 
     int currentIndividualBeingInitialized() const override;
     bool hasInitialized() const override;
@@ -189,7 +192,7 @@ private:
     
     void updateFitness();
     void updateDiversity();
-    void updateError();
+    //void updateError();
     void updateTerminationData();
     void handleImmigration();
 };
