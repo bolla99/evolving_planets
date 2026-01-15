@@ -130,18 +130,101 @@ IntersectionResult tri_tri_intersect(float3 v0, float3 v1, float3 v2, float3 u0,
     return IntResF;
 }
 
+
 kernel void triangleIntersectionKernel(
     device const Triangle* triangles [[buffer(0)]],
     device unsigned int* pTriCount [[buffer(1)]],
     device Result* result [[buffer(2)]],
     device float* debugBuffer [[buffer(3)]],
-    uint2 gid [[thread_position_in_grid]]) {
-    // Early exit: se già trovato, non fare altro
+    uint2 gid [[thread_position_in_grid]]
+    ) {
+    // Early exit
     if (atomic_load_explicit(&result->foundIntersection, memory_order_relaxed))
         return;
+
+    auto triCount = pTriCount[0];
+
     uint i = gid.x;
     uint j = gid.y;
+    
+    if (i >= triCount || j >= triCount || i >= j) return;
+    
+    // HEURISTIC: hardcoded distance
+    if (distance(triangles[i].v0, triangles[j].v0) > 0.5f) return;
+    
+    // HEURISTIC: spherical collision ( early exit )
+    float3 t1_centroid = (triangles[i].v0 + triangles[i].v1 + triangles[i].v2)/3.0f;
+    float3 t2_centroid = (triangles[j].v0 + triangles[j].v1 + triangles[j].v2)/3.0f;
+    
+    float t1_radius = distance(t1_centroid, triangles[i].v0);
+    t1_radius = max(t1_radius, distance(t1_centroid, triangles[i].v1));
+    t1_radius = max(t1_radius, distance(t1_centroid, triangles[i].v2));
+
+    float t2_radius = distance(t2_centroid, triangles[j].v0);
+    t2_radius = max(t2_radius, distance(t2_centroid, triangles[j].v1));
+    t2_radius = max(t2_radius, distance(t2_centroid, triangles[j].v2));
+    
+    if (distance(t1_centroid, t2_centroid) > (t1_radius + t2_radius)) return;
+    
+    // SPHERES COLLIDING: MOLLER TRUMBORE
+    IntersectionResult res = tri_tri_intersect(triangles[i].v0, triangles[i].v1, triangles[i].v2, triangles[j].v0, triangles[j].v1, triangles[j].v2);
+    if (res.found) {
+        // Solo il primo thread che imposta foundIntersection scrive nel buffer di debug
+        uint old = atomic_exchange_explicit(&result->foundIntersection, 1, memory_order_relaxed);
+        if (old == 0) {
+            debugBuffer[0] = triangles[i].v0.x;
+            debugBuffer[1] = triangles[i].v0.y;
+            debugBuffer[2] = triangles[i].v0.z;
+            debugBuffer[3] = triangles[i].v1.x;
+            debugBuffer[4] = triangles[i].v1.y;
+            debugBuffer[5] = triangles[i].v1.z;
+            debugBuffer[6] = triangles[i].v2.x;
+            debugBuffer[7] = triangles[i].v2.y;
+            debugBuffer[8] = triangles[i].v2.z;
+            debugBuffer[9] = triangles[j].v0.x;
+            debugBuffer[10] = triangles[j].v0.y;
+            debugBuffer[11] = triangles[j].v0.z;
+            debugBuffer[12] = triangles[j].v1.x;
+            debugBuffer[13] = triangles[j].v1.y;
+            debugBuffer[14] = triangles[j].v1.z;
+            debugBuffer[15] = triangles[j].v2.x;
+            debugBuffer[16] = triangles[j].v2.y;
+            debugBuffer[17] = triangles[j].v2.z;
+            debugBuffer[18] = res.intersectionPoint.x;
+            debugBuffer[19] = res.intersectionPoint.y;
+            debugBuffer[20] = res.intersectionPoint.z;
+        }
+    }
+}
+
+
+/*
+kernel void triangleIntersectionKernel(
+    device const Triangle* triangles [[buffer(0)]],
+    device unsigned int* pTriCount [[buffer(1)]],
+    device Result* result [[buffer(2)]],
+    device float* debugBuffer [[buffer(3)]],
+    device const uint* pairs [[buffer(4)]],
+    uint gid [[thread_position_in_grid]]
+    ) {
+    // Early exit
+    if (atomic_load_explicit(&result->foundIntersection, memory_order_relaxed))
+        return;
+
     auto triCount = pTriCount[0];
+
+
+    // inizio parte nuova
+
+    uint idx = gid * 2;
+    uint i = pairs[idx + 0];
+    uint j = pairs[idx + 1];
+
+    // fine parte nuova
+
+    //uint i = gid.x;
+    //uint j = gid.y;
+
     if (i >= triCount || j >= triCount || i >= j) return;
     IntersectionResult res = tri_tri_intersect(triangles[i].v0, triangles[i].v1, triangles[i].v2, triangles[j].v0, triangles[j].v1, triangles[j].v2);
     if (res.found) {
@@ -172,3 +255,4 @@ kernel void triangleIntersectionKernel(
         }
     }
 }
+*/
