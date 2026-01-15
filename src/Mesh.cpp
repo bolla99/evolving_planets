@@ -5,6 +5,8 @@
 #include <BSpline.hpp>
 #include <genetic.hpp>
 
+#import <Metal/Metal.hpp>
+#include <Foundation/Foundation.hpp>
 
 
 Mesh::Mesh(int numVertices, int numFaces,
@@ -216,7 +218,8 @@ std::shared_ptr<Mesh> Mesh::fromPolygon(
 std::shared_ptr<Mesh> Mesh::fromPlanet(
     const Planet& planet,
     const glm::vec4& color,
-    float samplingRes
+    float samplingRes,
+    bool onlyPosition
 )
 {
     int nU = static_cast<int>(1.0f / samplingRes) + 1; // non includo u=1, per periodicità
@@ -230,10 +233,13 @@ std::shared_ptr<Mesh> Mesh::fromPlanet(
     // SOUTH POLE
     glm::vec3 southPole = planet.evaluate(0.0f, 0.0f);
     vertices.push_back(southPole);
-    textCoords.push_back(glm::vec2(0.0f, 0.0f));
-    colors.push_back(color);
-    // temporary init
-    normals.emplace_back(0.0f);
+    if (!onlyPosition)
+    {
+        textCoords.push_back(glm::vec2(0.0f, 0.0f));
+        colors.push_back(color);
+        // temporary init
+        normals.emplace_back(0.0f);
+    }
     // Cintura centrale
     // skip one ring of the plateau, connect only to the outer
     for (int i = 1 + 1; i < nV - 1 - 1; ++i) { // +1 and -1 for first ring skip
@@ -241,32 +247,41 @@ std::shared_ptr<Mesh> Mesh::fromPlanet(
         for (int j = 0; j < nU; ++j) {
             float u = static_cast<float>(j) / static_cast<float>(nU); // u in [0, 1) -> for linking
             vertices.push_back(planet.evaluate(u, v));
-            textCoords.push_back(glm::vec2(u, v));
-            colors.push_back(color);
-            // temporary init
-            normals.emplace_back(0.0f);
+            if (!onlyPosition)
+            {
+                textCoords.push_back(glm::vec2(u, v));
+                colors.push_back(color);
+                // temporary init
+                normals.emplace_back(0.0f);
+            }
         }
     }
     // NORTH POLE
     glm::vec3 northPole = planet.evaluate(0.0f, 1.0f);
     vertices.push_back(northPole);
-    textCoords.push_back(glm::vec2(0.0f, 1.0f));
-    colors.push_back(color);
-    // temporary init
-    normals.emplace_back(0.0f);
+    if (!onlyPosition)
+    {
+        textCoords.push_back(glm::vec2(0.0f, 1.0f));
+        colors.push_back(color);
+        // temporary init
+        normals.emplace_back(0.0f);
+    }
 
     // NORTH POLE FAN
     uint32_t southPoleIdx = 0;
-    for (int j = 0; j < nU; ++j) {
+    for (int j = 0; j < nU; ++j)
+    {
         uint32_t v1 = 1 + j;
         uint32_t v2 = 1 + ((j + 1) % nU);
         indices.push_back(southPoleIdx);
         indices.push_back(v1);
         indices.push_back(v2);
-        glm::vec3 n = glm::normalize(glm::cross(vertices[v1] - vertices[southPoleIdx], vertices[v2] - vertices[southPoleIdx]));
-        normals[southPoleIdx] = n;
-        normals[v1] = n;
-        normals[v2] = n;
+        if (!onlyPosition) {
+            glm::vec3 n = glm::normalize(glm::cross(vertices[v1] - vertices[southPoleIdx], vertices[v2] - vertices[southPoleIdx]));
+            normals[southPoleIdx] = n;
+            normals[v1] = n;
+            normals[v2] = n;
+        }
     }
     // INNER PARALLELS
     // additional -2 from nV for first ring skip
@@ -282,18 +297,24 @@ std::shared_ptr<Mesh> Mesh::fromPlanet(
             indices.push_back(v0);
             indices.push_back(v2);
             indices.push_back(v1);
-            glm::vec3 n1 = glm::normalize(glm::cross(vertices[v2] - vertices[v0], vertices[v1] - vertices[v0]));
-            normals[v0] += n1; normals[v0] = glm::normalize(normals[v0]);
-            normals[v2] += n1; normals[v1] = glm::normalize(normals[v1]);
-            normals[v1] += n1; normals[v2] = glm::normalize(normals[v2]);
+            if (!onlyPosition)
+            {
+                glm::vec3 n1 = glm::normalize(glm::cross(vertices[v2] - vertices[v0], vertices[v1] - vertices[v0]));
+                normals[v0] += n1; normals[v0] = glm::normalize(normals[v0]);
+                normals[v2] += n1; normals[v1] = glm::normalize(normals[v1]);
+                normals[v1] += n1; normals[v2] = glm::normalize(normals[v2]);
+            }
             // Second Triangle
             indices.push_back(v1);
             indices.push_back(v2);
             indices.push_back(v3);
-            glm::vec3 n2 = glm::normalize(glm::cross(vertices[v2] - vertices[v1], vertices[v3] - vertices[v1]));
-            normals[v1] += n2; normals[v0] = glm::normalize(normals[v0]);
-            normals[v2] += n2; normals[v1] = glm::normalize(normals[v1]);
-            normals[v3] += n2; normals[v2] = glm::normalize(normals[v2]);
+            if (!onlyPosition)
+            {
+                glm::vec3 n2 = glm::normalize(glm::cross(vertices[v2] - vertices[v1], vertices[v3] - vertices[v1]));
+                normals[v1] += n2; normals[v0] = glm::normalize(normals[v0]);
+                normals[v2] += n2; normals[v1] = glm::normalize(normals[v1]);
+                normals[v3] += n2; normals[v2] = glm::normalize(normals[v2]);
+            }
         }
     }
     // Sud: fan
@@ -306,34 +327,275 @@ std::shared_ptr<Mesh> Mesh::fromPlanet(
         indices.push_back(v1);
         indices.push_back(northPoleIdx);
         indices.push_back(v2);
-        glm::vec3 n = glm::normalize(glm::cross(vertices[northPoleIdx] - vertices[v1], vertices[v2] - vertices[v1]));
-        normals[northPoleIdx] += n; normals[northPoleIdx] = glm::normalize(normals[northPoleIdx]);
-        normals[v1] += n; normals[v1] = glm::normalize(normals[v1]);
-        normals[v2] += n; normals[v2] = glm::normalize(normals[v2]);
+        if (!onlyPosition)
+        {
+            glm::vec3 n = glm::normalize(glm::cross(vertices[northPoleIdx] - vertices[v1], vertices[v2] - vertices[v1]));
+            normals[northPoleIdx] += n; normals[northPoleIdx] = glm::normalize(normals[northPoleIdx]);
+            normals[v1] += n; normals[v1] = glm::normalize(normals[v1]);
+            normals[v2] += n; normals[v2] = glm::normalize(normals[v2]);
+        }
     }
 
     // Attributi
-    std::vector<Core::VertexAttributeName> attributeNames = {
-        Core::VertexAttributeName::Position,
-        Core::VertexAttributeName::Color,
-        Core::VertexAttributeName::Normal,
-        Core::VertexAttributeName::TexCoord
-    };
-    std::vector<Core::VertexAttributeType> attributeTypes = {
-        Core::VertexAttributeType::Float3,
-        Core::VertexAttributeType::Float4,
-        Core::VertexAttributeType::Float3,
-        Core::VertexAttributeType::Float2
-    };
-    std::vector<std::vector<uint8_t>> vertexData(4); // Changed from 3 to 4
-    vertexData[0].resize(vertices.size() * sizeof(glm::vec3));
-    std::memcpy(vertexData[0].data(), vertices.data(), vertexData[0].size());
-    vertexData[1].resize(colors.size() * sizeof(glm::vec4));
-    std::memcpy(vertexData[1].data(), colors.data(), vertexData[1].size());
-    vertexData[2].resize(normals.size() * sizeof(glm::vec3));
-    std::memcpy(vertexData[2].data(), normals.data(), vertexData[2].size());
-    vertexData[3].resize(textCoords.size() * sizeof(glm::vec2));
-    std::memcpy(vertexData[3].data(), textCoords.data(), vertexData[3].size());
+    std::vector<Core::VertexAttributeName> attributeNames;
+    if (!onlyPosition) {
+        attributeNames = {
+            Core::VertexAttributeName::Position,
+            Core::VertexAttributeName::Color,
+            Core::VertexAttributeName::Normal,
+            Core::VertexAttributeName::TexCoord
+        };
+    } else {
+        attributeNames = {
+            Core::VertexAttributeName::Position
+        };
+    }
+
+    std::vector<Core::VertexAttributeType> attributeTypes;
+    if (!onlyPosition) {
+        std::vector<Core::VertexAttributeType> attributeTypes = {
+            Core::VertexAttributeType::Float3,
+            Core::VertexAttributeType::Float4,
+            Core::VertexAttributeType::Float3,
+            Core::VertexAttributeType::Float2
+        };
+    } else {
+        attributeTypes = {
+            Core::VertexAttributeType::Float3
+        };
+    }
+
+    std::vector<std::vector<uint8_t>> vertexData; // Changed from 3 to 4
+    if (!onlyPosition) {
+        vertexData.resize(4); // Changed from 3 to 4
+        vertexData[0].resize(vertices.size() * sizeof(glm::vec3));
+        std::memcpy(vertexData[0].data(), vertices.data(), vertexData[0].size());
+        vertexData[1].resize(colors.size() * sizeof(glm::vec4));
+        std::memcpy(vertexData[1].data(), colors.data(), vertexData[1].size());
+        vertexData[2].resize(normals.size() * sizeof(glm::vec3));
+        std::memcpy(vertexData[2].data(), normals.data(), vertexData[2].size());
+        vertexData[3].resize(textCoords.size() * sizeof(glm::vec2));
+        std::memcpy(vertexData[3].data(), textCoords.data(), vertexData[3].size());
+    } else {
+        vertexData.resize(1);
+        vertexData[0].resize(vertices.size() * sizeof(glm::vec3));
+        std::memcpy(vertexData[0].data(), vertices.data(), vertexData[0].size());
+    }
+    return std::make_shared<Mesh>(
+        static_cast<int>(vertices.size()),
+        static_cast<int>(indices.size() / 3),
+        attributeNames,
+        attributeTypes,
+        vertexData,
+        indices
+    );
+}
+
+// GPU-accelerated mesh builder using Metal (metal-cpp)
+std::shared_ptr<Mesh> Mesh::fromPlanetGPU(
+    const Planet& planet,
+    const glm::vec4& color,
+    float samplingRes,
+    bool onlyPosition
+)
+{
+    // compute sampling resolution
+    int nU = static_cast<int>(1.0f / samplingRes) + 1;
+    int nV = static_cast<int>(1.0f / samplingRes) + 1;
+
+    // estimate vertex/triangle counts similar to CPU path
+    int innerRows = std::max(0, nV - 4);
+    size_t numVertices = 1 + static_cast<size_t>(innerRows) * static_cast<size_t>(nU) + 1;
+    int innerQuadRows = std::max(0, nV - 5);
+    size_t numTriangles = static_cast<size_t>(nU) + static_cast<size_t>(innerQuadRows) * static_cast<size_t>(nU) * 2 + static_cast<size_t>(nU);
+    size_t numIndices = numTriangles * 3;
+
+    // safety: avoid huge allocations on GPU
+    const size_t MAX_VERTICES = 10'000'000;
+    if (numVertices == 0 || numVertices > MAX_VERTICES) {
+        return Mesh::fromPlanet(planet, color, samplingRes);
+    }
+
+    // flatten control points
+    auto cps = planet.controlPoints();
+    std::vector<float> controlPointsData;
+    controlPointsData.reserve(cps.size() * 3);
+    for (const auto& p : cps) { controlPointsData.push_back(p.x); controlPointsData.push_back(p.y); controlPointsData.push_back(p.z); }
+
+    // regenerate knots and basic planet metadata required by shader
+    int cpPerParallel = static_cast<int>(planet.parallelsCP()[0].size());
+    int parallelsCount = static_cast<int>(planet.parallelsCP().size());
+    int degreeU = planet.degreeU();
+    int degreeV = planet.degreeV();
+
+    auto regeneratedKnotsU = BSpline::generateKnots(cpPerParallel, degreeU, 0);
+    auto regeneratedKnotsV = BSpline::generateKnots(parallelsCount, degreeV, degreeV);
+    std::vector<int> knotsUData(regeneratedKnotsU.begin(), regeneratedKnotsU.end());
+    std::vector<int> knotsVData(regeneratedKnotsV.begin(), regeneratedKnotsV.end());
+
+    // metal-cpp setup (same pattern used in Planet::isAutointersecating)
+    auto device = NS::TransferPtr(MTL::CreateSystemDefaultDevice());
+    if (!device) return Mesh::fromPlanet(planet, color, samplingRes);
+    auto pool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
+    NS::Error* error = nullptr;
+    auto libraryPath = NS::Bundle::mainBundle()->resourcePath()->stringByAppendingString(
+        NS::String::string("/Shaders.metallib", NS::ASCIIStringEncoding)
+    );
+    auto library = NS::TransferPtr(device->newLibrary(libraryPath, &error));
+    if (!library) return Mesh::fromPlanet(planet, color, samplingRes);
+
+    // expected compute functions in metallib
+    auto buildVerticesFunc = onlyPosition? NS::String::string("buildVerticesOnlyPosition", NS::ASCIIStringEncoding) : NS::String::string("buildVertices", NS::ASCIIStringEncoding);
+    auto funcVertices = NS::TransferPtr(library->newFunction(buildVerticesFunc));
+    auto funcIndices = NS::TransferPtr(library->newFunction(NS::String::string("buildIndices", NS::ASCIIStringEncoding)));
+    if (!funcVertices || !funcIndices) return Mesh::fromPlanet(planet, color, samplingRes);
+
+    NS::Error* errPSO = nullptr;
+    auto pipelineVertices = NS::TransferPtr(device->newComputePipelineState(funcVertices.get(), &errPSO));
+    if (!pipelineVertices) return Mesh::fromPlanet(planet, color, samplingRes);
+    NS::Error* errPSO2 = nullptr;
+    auto pipelineIndices = NS::TransferPtr(device->newComputePipelineState(funcIndices.get(), &errPSO2));
+    if (!pipelineIndices) return Mesh::fromPlanet(planet, color, samplingRes);
+
+    auto commandQueue = NS::TransferPtr(device->newCommandQueue());
+
+    // allocate GPU buffers
+    auto controlPointsBuffer = NS::TransferPtr(device->newBuffer(controlPointsData.data(), controlPointsData.size() * sizeof(float), MTL::ResourceStorageModeShared));
+    auto knotsUBuffer = NS::TransferPtr(device->newBuffer(knotsUData.data(), knotsUData.size() * sizeof(int), MTL::ResourceStorageModeShared));
+    auto knotsVBuffer = NS::TransferPtr(device->newBuffer(knotsVData.data(), knotsVData.size() * sizeof(int), MTL::ResourceStorageModeShared));
+
+    auto outPositionsBuffer = NS::TransferPtr(device->newBuffer(numVertices * sizeof(float) * 3, MTL::ResourceStorageModeShared));
+    NS::SharedPtr<MTL::Buffer> outNormalsBuffer = nullptr;
+    if (!onlyPosition) outNormalsBuffer = NS::TransferPtr(device->newBuffer(numVertices * sizeof(float) * 3, MTL::ResourceStorageModeShared));
+    NS::SharedPtr<MTL::Buffer> outTexcoordsBuffer = nullptr;
+    if (!onlyPosition) outTexcoordsBuffer = NS::TransferPtr(device->newBuffer(numVertices * sizeof(float) * 2, MTL::ResourceStorageModeShared));
+    auto outIndicesBuffer = NS::TransferPtr(device->newBuffer(numIndices * sizeof(uint32_t), MTL::ResourceStorageModeShared));
+
+    if (!controlPointsBuffer || !knotsUBuffer || !knotsVBuffer || !outPositionsBuffer || !outIndicesBuffer) {
+        return Mesh::fromPlanet(planet, color, samplingRes);
+    }
+    if (!onlyPosition and (!outNormalsBuffer or !outTexcoordsBuffer)) return Mesh::fromPlanet(planet, color, samplingRes);
+
+    // params struct (must mirror the Metal struct layout)
+    struct Params {
+        int nU;
+        int nV;
+        int degreeU;
+        int degreeV;
+        int parallelsCount;
+        int cpPerParallel;
+        int knotsUSize;
+        int knotsVSize;
+        float samplingRes;
+    } params{nU, nV, degreeU, degreeV, parallelsCount, cpPerParallel, static_cast<int>(knotsUData.size()), static_cast<int>(knotsVData.size()), samplingRes};
+
+    auto paramsBuffer = NS::TransferPtr(device->newBuffer(&params, sizeof(Params), MTL::ResourceStorageModeShared));
+
+    // dispatch buildVertices kernel
+    auto commandBuffer = commandQueue->commandBuffer();
+    auto encoder = commandBuffer->computeCommandEncoder();
+    encoder->setComputePipelineState(pipelineVertices.get());
+    encoder->setBuffer(controlPointsBuffer.get(), 0, 0);
+    encoder->setBuffer(knotsUBuffer.get(), 0, 1);
+    encoder->setBuffer(knotsVBuffer.get(), 0, 2);
+    encoder->setBuffer(outPositionsBuffer.get(), 0, 3);
+    if (!onlyPosition)
+    {
+        encoder->setBuffer(outNormalsBuffer.get(), 0, 4);
+        encoder->setBuffer(outTexcoordsBuffer.get(), 0, 5);
+    }
+    encoder->setBuffer(paramsBuffer.get(), 0, 7);
+
+    auto gridSize = MTL::Size::Make(static_cast<uint64_t>(numVertices), 1, 1);
+    auto tg = std::min<uint64_t>(pipelineVertices->maxTotalThreadsPerThreadgroup(), 256);
+    auto threadgroupSize = MTL::Size::Make(tg, 1, 1);
+    encoder->dispatchThreads(gridSize, threadgroupSize);
+    encoder->endEncoding();
+    commandBuffer->commit();
+    commandBuffer->waitUntilCompleted();
+
+    // dispatch buildIndices kernel
+    auto commandBuffer2 = commandQueue->commandBuffer();
+    auto encoder2 = commandBuffer2->computeCommandEncoder();
+    encoder2->setComputePipelineState(pipelineIndices.get());
+    encoder2->setBuffer(paramsBuffer.get(), 0, 7);
+    encoder2->setBuffer(outIndicesBuffer.get(), 0, 6);
+
+    auto gridSize2 = MTL::Size::Make(static_cast<uint64_t>(numTriangles), 1, 1);
+    auto tg2 = std::min<uint64_t>(pipelineIndices->maxTotalThreadsPerThreadgroup(), 256);
+    auto threadgroupSize2 = MTL::Size::Make(tg2, 1, 1);
+    encoder2->dispatchThreads(gridSize2, threadgroupSize2);
+    encoder2->endEncoding();
+    commandBuffer2->commit();
+    commandBuffer2->waitUntilCompleted();
+
+    // read back results
+    auto posPtr = reinterpret_cast<float*>(outPositionsBuffer->contents());
+    float* normPtr = nullptr;
+    if (!onlyPosition) normPtr = reinterpret_cast<float*>(outNormalsBuffer->contents());
+    float* texPtr = nullptr;
+    if (!onlyPosition) texPtr = reinterpret_cast<float*>(outTexcoordsBuffer->contents());
+    auto idxPtr = reinterpret_cast<uint32_t*>(outIndicesBuffer->contents());
+
+    std::vector<glm::vec3> vertices(numVertices);
+    std::vector<glm::vec3> normals;
+    if (!onlyPosition) normals.resize(numVertices);
+    std::vector<glm::vec2> texcoords;
+    if (!onlyPosition) texcoords.resize(numVertices);
+    std::vector<uint32_t> indices(numIndices);
+
+    for (size_t i = 0; i < numVertices; ++i) {
+        vertices[i] = glm::vec3(posPtr[i * 3 + 0], posPtr[i * 3 + 1], posPtr[i * 3 + 2]);
+        if (!onlyPosition)
+        {
+            normals[i] = glm::vec3(normPtr[i * 3 + 0], normPtr[i * 3 + 1], normPtr[i * 3 + 2]);
+            texcoords[i] = glm::vec2(texPtr[i * 2 + 0], texPtr[i * 2 + 1]);
+        }
+    }
+    for (size_t i = 0; i < numIndices; ++i) indices[i] = idxPtr[i];
+
+    // assemble vertexData like CPU path
+    std::vector<Core::VertexAttributeName> attributeNames;
+    std::vector<Core::VertexAttributeType> attributeTypes;
+    if (!onlyPosition)
+    {
+        attributeNames = {
+            Core::VertexAttributeName::Position,
+            Core::VertexAttributeName::Color,
+            Core::VertexAttributeName::Normal,
+            Core::VertexAttributeName::TexCoord
+        };
+        attributeTypes = {
+            Core::VertexAttributeType::Float3,
+            Core::VertexAttributeType::Float4,
+            Core::VertexAttributeType::Float3,
+            Core::VertexAttributeType::Float2
+        };
+    } else
+    {
+        attributeNames = {
+            Core::VertexAttributeName::Position
+        };
+        attributeTypes = {
+            Core::VertexAttributeType::Float3
+        };
+    }
+
+    std::vector<glm::vec4> colors;
+    if (!onlyPosition) colors = std::vector(numVertices, color);
+
+    std::vector<std::vector<uint8_t>> vertexData;
+    if (!onlyPosition)
+    {
+        vertexData.resize(4);
+        vertexData[1].resize(colors.size() * sizeof(glm::vec4)); std::memcpy(vertexData[1].data(), colors.data(), vertexData[1].size());
+        vertexData[2].resize(normals.size() * sizeof(glm::vec3)); std::memcpy(vertexData[2].data(), normals.data(), vertexData[2].size());
+        vertexData[3].resize(texcoords.size() * sizeof(glm::vec2)); std::memcpy(vertexData[3].data(), texcoords.data(), vertexData[3].size());
+    } else
+    {
+        vertexData.resize(1);
+    }
+    vertexData[0].resize(vertices.size() * sizeof(glm::vec3)); std::memcpy(vertexData[0].data(), vertices.data(), vertexData[0].size());
 
     return std::make_shared<Mesh>(
         static_cast<int>(vertices.size()),
@@ -723,7 +985,6 @@ std::shared_ptr<Mesh> Mesh::fromPlanetMeanCurvatureColor(
         vertexData,
         indices
     );
-
 }
 
 std::shared_ptr<Mesh> Mesh::fromPlanetGaussCurvatureColor(
@@ -1111,7 +1372,6 @@ std::shared_ptr<Mesh> Mesh::fromPlanetLaplacianCurvatureColor(
         indices
     );
 }
-
 
 std::vector<glm::vec3> Mesh::getVertices() const
 {

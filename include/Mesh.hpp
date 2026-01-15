@@ -68,7 +68,8 @@ public:
     static std::shared_ptr<Mesh> fromPlanet(
         const Planet& planet,
         const glm::vec4& color = noVertexColor(),
-        float samplingRes = 0.01f
+        float samplingRes = 0.01f,
+        bool onlyPosition = false
         );
     static std::shared_ptr<Mesh> fromPlanetFitnessColor(
         const Planet& planet,
@@ -96,6 +97,14 @@ public:
         const glm::vec4& c2 = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f),
         float samplingRes = 0.01f
         );
+
+    // GPU accelerated mesh builder using Metal (metal-cpp)
+    static std::shared_ptr<Mesh> fromPlanetGPU(
+        const Planet& planet,
+        const glm::vec4& color = noVertexColor(),
+        float samplingRes = 0.01f,
+        bool onlyPosition = false
+    );
 
     // depends on gravity library (ray triangle intersection
     // RAY PICKED DATA
