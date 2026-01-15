@@ -456,10 +456,10 @@ App& App::run()
                 ImGui::PushItemWidth(150);
                 if (ImGui::Checkbox("Show Control Polyhedron", &showControlPolyhedron)) dirtyPlanets = true;
                 if (ImGui::Checkbox("Show Mesh", &showMesh)) dirtyPlanets = true;
-                if (ImGui::ColorEdit4("mesh color", &meshColor[0])) dirtyPlanets = true;
+                //if (ImGui::ColorEdit4("mesh color", &meshColor[0])) dirtyPlanets = true;
                 if (ImGui::SliderFloat("tessellation step", &tessellationResolution, 0.01f, 0.1f, "%.2f")) dirtyPlanets = true;
                 if (ImGui::Checkbox("Wireframe", &wireframe)) dirtyPlanets = true;
-                if (ImGui::ColorEdit4("wireframe color", &wireframeColor[0])) dirtyPlanets = true;
+                //if (ImGui::ColorEdit4("wireframe color", &wireframeColor[0])) dirtyPlanets = true;
                 /*
                 if (ImGui::Checkbox("Show Normals", &normals)) dirtyPlanets = true;
                 if (ImGui::ColorEdit4("normal color", &normalColor[0])) dirtyPlanets = true;
@@ -483,7 +483,7 @@ App& App::run()
                 if (ImGui::SliderFloat("Fitness Based Coloring Discrete Treshold", &fitnessBasedColoringDiscreteTreshold, 0.0f, 1.0f, "%.2f")) dirtyPlanets = true;
                 
                 
-                if (ImGui::Checkbox("Shaded", &shaded)) dirtyPlanets = true;
+                //if (ImGui::Checkbox("Shaded", &shaded)) dirtyPlanets = true;
                 
                 /*
                 ImGui::SliderFloat("Debug Ball Scale", &debugBallScale, 0.01f, 1.0f, "%.2f");
