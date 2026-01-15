@@ -1,5 +1,6 @@
 #include <genetic.hpp>
 
+/*
 CMA::CMA(int size)
 {
     std::cout << "initializing population" << std::endl;
@@ -103,3 +104,4 @@ float CMA::fitness(const Planet& individual)
     //std::cout << "positions size: " << positions.size() << std::endl;
     return fitnessValue / d;
 }
+*/

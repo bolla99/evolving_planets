@@ -130,6 +130,7 @@ void PlanetGA::mutation()
     auto successfulMutations = 0;
     for (int i = 0; i < population.size(); i++)
     {
+        auto success = false;
         for (int j = 0; j < _mutationAttempts; j++) {
             // random three individuals
             // the base planet must not be the same position of the target mutator position
@@ -153,11 +154,12 @@ void PlanetGA::mutation()
                 //planetR1->polesSmoothing();
                 successfulMutations++;
                 nextGeneration[i] = planetR1;
+                success = true;
                 break;
             }
         }
         // if failed -> put next generation placeholder to avoid nullptr on first epoch if every mutation fails
-        //nextGeneration[i] = population[i];
+        if (not success) nextGeneration[i] = population[i];
     }
     std::cout << "mutation done with success: " << 100.0f * static_cast<float>(successfulMutations) / static_cast<float>(population.size()) << "%" << std::endl;
 }
