@@ -10,6 +10,8 @@
 #include "glm/gtc/type_ptr.hpp"
 #include "glm/gtx/intersect.hpp"
 #include "glm/gtx/string_cast.hpp"
+#include <BHV.hpp>
+#include <SDL_timer.h>
 
 
 Planet::Planet(int degreeU, int degreeV, const std::vector<std::vector<glm::vec3>>& parallels) :
@@ -399,31 +401,31 @@ std::shared_ptr<Planet> Planet::sphere(int nParallels, int nMeridians, float rad
             else if (i == 1)
             {
                 parallels[i][j] = glm::vec3(
-                radius * 0.1f * sin(deltaTheta) * cos(phi),
-                radius * heightMultiplier - 0.01f,
-                radius * 0.1f * sin(deltaTheta) * sin(phi));
+                radius * sin(deltaTheta) * cos(phi) * 0.1f,
+                radius * heightMultiplier,
+                radius * sin(deltaTheta) * sin(phi) * 0.1f);
             }
             else if (i == 2)
             {
                 parallels[i][j] = glm::vec3(
-                radius * 0.2f * sin(deltaTheta) * cos(phi),
-                radius * heightMultiplier - 0.02f,
-                radius * 0.2f * sin(deltaTheta) * sin(phi));
+                radius * sin(deltaTheta) * cos(phi) * 0.3f,
+                radius * heightMultiplier,
+                radius * sin(deltaTheta) * sin(phi) * 0.3f);
             }
             // SOUTHERN PLATEAU
             else if (i == nParallels - 3)
             {
                 parallels[i][j] = glm::vec3(
-                radius * 0.2f * sin(1.0 - deltaTheta) * cos(phi),
+                radius * 0.1f * sin(1.0 - deltaTheta) * cos(phi),
                 -radius * heightMultiplier,
-                radius * 0.2f * sin(1.0 - deltaTheta) * sin(phi));
+                radius * 0.1f * sin(1.0 - deltaTheta) * sin(phi));
             }
             else if (i == nParallels - 2)
             {
                 parallels[i][j] = glm::vec3(
-                radius * 0.1f * sin(1.0 - deltaTheta) * cos(phi),
+                radius * 0.03f * sin(1.0 - deltaTheta) * cos(phi),
                 -radius * heightMultiplier,
-                radius * 0.1f * sin(1.0 - deltaTheta) * sin(phi));
+                radius * 0.03f * sin(1.0 - deltaTheta) * sin(phi));
             }
             else if (i == nParallels - 1)
             {
@@ -789,6 +791,9 @@ bool Planet::mutate(float absMinDistance, float absMaxDistance, float autointers
 #include <Foundation/Foundation.hpp>
 
 bool Planet::isAutointersecating(float step) const {
+    auto wholeMS = SDL_GetTicks64();
+
+    auto meshSetupTime = SDL_GetTicks64();
     // 1. Estrai triangoli campionati
     struct Triangle {
         glm::vec3 v0, v1, v2;
@@ -816,15 +821,25 @@ bool Planet::isAutointersecating(float step) const {
         }
     }
     NS::UInteger triCount = triangles.size();*/
-    auto mesh = Mesh::fromPlanet(*this, glm::vec4(1.0f, 0.0f, 1.0f, 1.0f), step);
+    //auto mesh = Mesh::fromPlanet(*this, glm::vec4(1.0f, 0.0f, 1.0f, 1.0f), step);
+    auto mesh = Mesh::fromPlanetGPU(*this, glm::vec4(1.0f, 0.0f, 1.0f, 1.0f), step, true);
+
     auto triangles = std::vector<Triangle>();
+    std::cout << "mesh setup time: " << SDL_GetTicks64() - meshSetupTime << std::endl;
+
+    auto getVerticesTime = SDL_GetTicks64();
     auto vertices = mesh->getTriangles();
+    std::cout << "get vertices time: " << SDL_GetTicks64() - getVerticesTime << std::endl;
+    auto createVerticesTime = SDL_GetTicks64();
     for (int i = 0; i < vertices.size() / 3; i++)
     {
         triangles.push_back(Triangle{vertices[i*3], vertices[i*3 + 1], vertices[i*3 + 2]});
     }
     auto triCount = triangles.size();
+    std::cout << "create vertices time: " << SDL_GetTicks64() - createVerticesTime << std::endl;
 
+
+    auto setupMetalTime = SDL_GetTicks64();
     // 2. Setup Metal
     auto device = NS::TransferPtr(MTL::CreateSystemDefaultDevice());
     if (!device) return false;
@@ -864,24 +879,33 @@ bool Planet::isAutointersecating(float step) const {
     encoder->setBuffer(resultBuffer.get(), 0, 2);
     encoder->setBuffer(debugBuffer.get(), 0, 3);
 
+    std::cout << "metal setup time: " << SDL_GetTicks64() - setupMetalTime << std::endl;
+
     /*
+    // BHV ACCELLERATION
+    auto  ms = SDL_GetTicks64();
+    auto bhv = BHV(mesh->getVertices(), mesh->getFacesData());
+    std::cout << "BHV construction time: " << SDL_GetTicks64() - ms << std::endl;
+
+    auto pairsms = SDL_GetTicks64();
     // set pairs
     std::vector<uint32_t> pairs;
-    //pairs.reserve(triCount * (triCount - 1) / 2);
     for (uint32_t i = 0; i < triCount; ++i) {
-        for (uint32_t j = i + 1; j < triCount; ++j) {
+        auto siblings = bhv.siblings(triangles[i].v0, triangles[i].v1, triangles[i].v2);
+        for (auto sibling : siblings)
+        {
             pairs.push_back(i);
-            pairs.push_back(j);
+            pairs.push_back(sibling);
         }
     }
     auto pairsBuffer = NS::TransferPtr(device->newBuffer(pairs.data(), pairs.size() * sizeof(uint32_t), MTL::ResourceStorageModeShared));
     encoder->setBuffer(pairsBuffer.get(), 0, 4); // bind a slot 4
-    auto totalPairs = pairs.size() / 2;
-*/
+    std::cout << "Pairs time: " << SDL_GetTicks64() - pairsms << std::endl;
+    */
     auto gridSize = MTL::Size::Make(triCount, triCount, 1);
-    //auto gridSize = MTL::Size::Make(totalPairs, 1, 1);
+    //auto gridSize = MTL::Size::Make(pairs.size() / 2, 1, 1);
     auto w = pipeline->maxTotalThreadsPerThreadgroup();
-    auto threadgroupSize = MTL::Size::Make(128, 1, 1);
+    auto threadgroupSize = MTL::Size::Make(16, 16, 1);
     encoder->dispatchThreads(gridSize, threadgroupSize);
     encoder->endEncoding();
     commandBuffer->commit();
@@ -911,6 +935,7 @@ bool Planet::isAutointersecating(float step) const {
     }
 
     delete[] debug;
+    std::cout << "test time: " << SDL_GetTicks64() - wholeMS << std::endl;
     return (*foundPtr) != 0;
 }
 
