@@ -10,7 +10,7 @@
 #include "glm/gtc/type_ptr.hpp"
 #include "glm/gtx/intersect.hpp"
 #include "glm/gtx/string_cast.hpp"
-#include <BHV.hpp>
+#include <BVH.hpp>
 #include <SDL_timer.h>
 
 
