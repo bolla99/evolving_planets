@@ -24,13 +24,15 @@ public:
     App(App&& app) = delete;
     App& operator=(App&& app) = delete;
 
-    virtual App& init();
-    virtual App& run();
+    virtual void init() = 0;
+    virtual void run() = 0;
 
-private:
+    static std::array<glm::vec3, 2> mouseRay(glm::mat4 viewMatrix, SDL_Window* window, Rendering::IRenderer* renderer);
+
+
+protected:
     SDL_Window* _window;
     std::unique_ptr<Rendering::IRenderer> _renderer;
-    std::unique_ptr<Camera> _camera;
 };
 
 #endif //APP_HPP
