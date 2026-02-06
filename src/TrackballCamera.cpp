@@ -9,9 +9,9 @@
 
 TrackballCamera::TrackballCamera() : h(0.0f), v(0.0f), distance(0.0f) {}
 
-void TrackballCamera::pan(float delta) { h += delta; }
-void TrackballCamera::tilt(float delta) { v += delta; }
-void TrackballCamera::zoom(float delta) { distance += delta; }
+void TrackballCamera::pan(float amount) { h += amount; }
+void TrackballCamera::tilt(float amount) { v += amount; }
+void TrackballCamera::zoom(float amount) { distance += amount; }
 
 glm::mat4x4 TrackballCamera::getViewMatrix() const
 {

@@ -12,9 +12,9 @@ class TrackballCamera : public Camera
 public:
     TrackballCamera();
 
-    void pan(float delta);
-    void tilt(float delta);
-    void zoom(float delta);
+    void pan(float amount) override;
+    void tilt(float amount) override;
+    void zoom(float amount) override;
 
     [[nodiscard]] glm::mat4x4 getViewMatrix() const override;
 
