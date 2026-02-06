@@ -189,10 +189,10 @@ std::shared_ptr<Mesh> Mesh::fromPolygon(
     };
 
     auto lines = std::vector<glm::vec3>();
-    for (int i = 0; i < positions.size() - 1; ++i)
+    for (int i = 0; i < positions.size(); ++i)
     {
         lines.push_back(positions[i]);
-        if (addInnerVertices) lines.push_back(positions[i + 1]);
+        if (addInnerVertices and i + 1 < positions.size()) lines.push_back(positions[i + 1]);
     }
     auto colors = std::vector<glm::vec4>(lines.size());
     for (int i = 0; i < colors.size(); ++i)
@@ -1474,7 +1474,7 @@ glm::vec2 Mesh::uvFromRay(glm::vec3 origin, glm::vec3 direction) const
     return resultUV;
 }
 
-glm::vec3 Mesh::rayIntersection(glm::vec3 origin, glm::vec3 direction) const
+std::pair<bool, glm::vec3> Mesh::rayIntersection(glm::vec3 origin, glm::vec3 direction) const
 {
     direction = glm::normalize(direction);
 
@@ -1482,6 +1482,7 @@ glm::vec3 Mesh::rayIntersection(glm::vec3 origin, glm::vec3 direction) const
     const auto& indices = _faces;
 
     float closestDistance = std::numeric_limits<float>::max();
+    bool found;
 
     for (size_t i = 0; i < indices.size(); i += 3) {
         uint32_t idx0 = indices[i];
@@ -1495,11 +1496,12 @@ glm::vec3 Mesh::rayIntersection(glm::vec3 origin, glm::vec3 direction) const
         float t;
         if (util::ray_triangle_intersection(origin, direction, v0, v1, v2, &t)) {
             if (t > 0.00001f && t < closestDistance) {
+                found = true;
                 closestDistance = t;
             }
         }
     }
-    return origin + closestDistance * direction;
+    return {found, origin + closestDistance * direction};
 }
 
 std::vector<glm::vec3> Mesh::getNormals() const

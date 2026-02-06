@@ -108,8 +108,8 @@ public:
 
     // depends on gravity library (ray triangle intersection
     // RAY PICKED DATA
-    glm::vec2 uvFromRay(glm::vec3 origin, glm::vec3 direction) const;
-    glm::vec3 rayIntersection(glm::vec3 origin, glm::vec3 direction) const;
+    [[nodiscard]] glm::vec2 uvFromRay(glm::vec3 origin, glm::vec3 direction) const;
+    [[nodiscard]] std::pair<bool, glm::vec3> rayIntersection(glm::vec3 origin, glm::vec3 direction) const;
 
 
 
