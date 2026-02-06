@@ -22,7 +22,8 @@ namespace Rendering
         depthTest(config.depthTest),
         name(config.name),
         vertexShader(config.vertexShader),
-        fragmentShader(config.fragmentShader)
+        fragmentShader(config.fragmentShader),
+        materials(config.materials)
         {
             if (!_vertexDescriptor.validateVertexDescriptor())
             {
@@ -52,6 +53,7 @@ namespace Rendering
         const std::string name;
         const std::string vertexShader;
         const std::string fragmentShader;
+        const std::vector<MaterialInfo> materials;
 
     private:
         const VertexDescriptor& _vertexDescriptor;

@@ -19,7 +19,8 @@ namespace Rendering
                Solid,
                Back,
                Enabled,
-               G_getVertexDescriptors().at("triangle_pso")
+               G_getVertexDescriptors().at("triangle_pso"),
+                {}
             }
         },
         std::pair<std::string, const PSOConfig>{
@@ -33,7 +34,8 @@ namespace Rendering
                 Solid,
                 Back,
                 Enabled,
-                G_getVertexDescriptors().at("PC")
+                G_getVertexDescriptors().at("PC"),
+                {}
             }
         },
         std::pair<std::string, const PSOConfig>{
@@ -47,7 +49,8 @@ namespace Rendering
                 Solid,
                 Back,
                 Enabled,
-                G_getVertexDescriptors().at("PCN")
+                G_getVertexDescriptors().at("PCN"),
+                {}
             }
         },
         std::pair<std::string, const PSOConfig>{
@@ -61,7 +64,23 @@ namespace Rendering
                 Wireframe,
                 Back,
                 Enabled,
-                G_getVertexDescriptors().at("PCN")
+                G_getVertexDescriptors().at("PCN"),
+                {}
+            }
+        },
+        std::pair<std::string, const PSOConfig>{
+            std::string("VCPHONG_WITH_TINT"),
+            PSOConfig
+            {
+                "VCPHONG_WITH_TINT",
+                "vertexVCPHONGWithTint",
+                "fragmentVCPHONG",
+                Triangle,
+                Wireframe,
+                Back,
+                Enabled,
+                G_getVertexDescriptors().at("PCN"),
+                {{VCPHONG, Vertex, PerObject, 27}}
             }
         },
         std::pair<std::string, const PSOConfig>{
@@ -75,8 +94,9 @@ namespace Rendering
                 Solid,
                 Back,
                 Enabled,
-                G_getVertexDescriptors().at("PC")
-            }
+                G_getVertexDescriptors().at("PC"),
+                {}
+            },
         },
         std::pair<std::string, const PSOConfig>{
             std::string("TexturePHONG"),
@@ -89,7 +109,8 @@ namespace Rendering
                 Solid,
                 Back,
                 Enabled,
-                G_getVertexDescriptors().at("PCNUV")
+                G_getVertexDescriptors().at("PCNUV"),
+                {}
             }
         },
         std::pair<std::string, const PSOConfig>{
@@ -103,8 +124,9 @@ namespace Rendering
                 Solid,
                 Back,
                 Disabled,
-                G_getVertexDescriptors().at("PUV")
-            }
+                G_getVertexDescriptors().at("PUV"),
+                {}
+            },
         },
         std::pair<std::string, const PSOConfig>{
             std::string("curve"),
@@ -117,8 +139,9 @@ namespace Rendering
                 Solid,
                 Back,
                 Enabled,
-                G_getVertexDescriptors().at("PC")
-            }
+                G_getVertexDescriptors().at("PC"),
+                {}
+            },
         }
     };
 }

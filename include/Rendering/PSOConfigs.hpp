@@ -7,6 +7,7 @@
 
 #include <string>
 #include "VertexDescriptor.hpp"
+#include "Material.hpp"
 
 namespace Rendering
 {
@@ -42,6 +43,7 @@ namespace Rendering
         Culling culling;
         DepthTest depthTest;
         VertexDescriptor vertexDescriptor;
+        std::vector<MaterialInfo> materials;
     };
 
     extern const std::unordered_map<std::string, const PSOConfig> psoConfigs;

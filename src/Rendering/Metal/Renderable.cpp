@@ -124,6 +124,21 @@ namespace Rendering::Metal
         auto mvpBuffer = NS::TransferPtr(metalCommandEncoder->device()->newBuffer(glm::value_ptr(_modelMatrix), 64, MTL::ResourceStorageModeShared));
         metalCommandEncoder->setVertexBuffer(mvpBuffer.get(), 0, 29);
 
+        // set materials
+        for (auto& material : _materials)
+        {
+            auto data = material->bytes();
+            auto materialBuffer = NS::TransferPtr(metalCommandEncoder->device()->newBuffer(data, material->size(), MTL::ResourceStorageModeShared));
+            if (material->info.stage == MaterialStage::Vertex)
+            {
+                metalCommandEncoder->setVertexBuffer(materialBuffer.get(), 0, material->info.bufferIndex);
+            }
+            else
+            {
+                metalCommandEncoder->setFragmentBuffer(materialBuffer.get(), 0, material->info.bufferIndex);
+            }
+        }
+
         // set fill mode
         if (wireframe)
         {

@@ -24,7 +24,7 @@ namespace Rendering::Metal
             );
 
         // override
-        void* raw() const override { return _metalPSO.get(); }
+        [[nodiscard]] void* raw() const override { return _metalPSO.get(); }
 
         // observer functions
         [[nodiscard]] MTL::Function* getVertexFunction() const { return _vertexF.get(); }
