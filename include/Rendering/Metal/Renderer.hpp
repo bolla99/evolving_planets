@@ -33,7 +33,7 @@ namespace Rendering::Metal
         ~Renderer() override;
 
         void update(const glm::mat4x4& viewMatrix) override;
-        glm::mat4x4 getProjectionMatrix() const override;
+        [[nodiscard]] glm::mat4x4 getProjectionMatrix() const override;
 
 
     private:

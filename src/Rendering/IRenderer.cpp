@@ -17,7 +17,7 @@ namespace Rendering
         RenderLayer layer
     )
     {
-        if (_pipelineStateObjects.contains(psoConfig.name))
+        if (!_pipelineStateObjects.contains(psoConfig.name))
         {
             try
             {
@@ -73,6 +73,7 @@ namespace Rendering
                 return renderable;
             }
         }
+        return nullptr;
     }
 
     void IRenderer::setVisible(uint64_t index, bool visible)
@@ -121,8 +122,6 @@ namespace Rendering
         }
     }
 
-
-
     // load the pipeline state objects from the PSOConfigs using the pso factory
     void IRenderer::loadPSOs(const std::unordered_map<std::string, const PSOConfig>& psoConfigs)
     {
@@ -140,57 +139,33 @@ namespace Rendering
         );
     }
 
-    void IRenderer::addDirectionalLight(const DirectionalLight& light)
+    void IRenderer::setDirectionalLight(const DirectionalLight& light, int index)
     {
-        if (_lights.numDirectionalLights < MAX_DIRECTIONAL_LIGHTS)
+        if (index >= 0 && index < MAX_DIRECTIONAL_LIGHTS)
         {
-            _lights.directionalLights[_lights.numDirectionalLights++] = light;
+            _lights.directionalLights[index] = light;
         }
         else
         {
-            std::cerr << "Maximum number of directional lights reached: " << MAX_DIRECTIONAL_LIGHTS << std::endl;
+            std::cerr << "Invalid directional light index: " << index << std::endl;
         }
     }
-    void IRenderer::addPointLight(const PointLight& light)
+    void IRenderer::setPointLight(const PointLight& light, int index)
     {
-        if (_lights.numPointLights < MAX_POINT_LIGHTS)
+        if (index >= 0 && index < MAX_POINT_LIGHTS)
         {
-            _lights.pointLights[_lights.numPointLights++] = light;
+            _lights.pointLights[index] = light;
         }
         else
         {
-            std::cerr << "Maximum number of point lights reached: " << MAX_POINT_LIGHTS << std::endl;
+            std::cerr << "Invalid point light index: " << index << std::endl;
         }
     }
     void IRenderer::clearLights()
     {
         _lights = Lights{}; // reset the lights structure
     }
-    void IRenderer::removeLastDirectionalLight()
-    {
-        if (_lights.numDirectionalLights > 0)
-        {
-            --_lights.numDirectionalLights;
-            _lights.directionalLights[_lights.numDirectionalLights] = DirectionalLight{}; // reset the last light
-        }
-        else
-        {
-            std::cerr << "No directional lights to remove." << std::endl;
-        }
-    }
-    void IRenderer::removeLastPointLight()
-    {
-        if (_lights.numPointLights > 0)
-        {
-            --_lights.numPointLights;
-            _lights.pointLights[_lights.numPointLights] = PointLight{}; // reset the last light
-        }
-        else
-        {
-            std::cerr << "No point lights to remove." << std::endl;
-        }
 
-    }
     void IRenderer::setAmbientGlobalLight(const glm::vec4& color)
     {
         _lights.globalAmbientLightColor = color;

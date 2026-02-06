@@ -17,7 +17,6 @@
 #include <Rendering/Lights.hpp>
 
 
-using RenderableID = uint64_t;
 
 namespace Rendering
 {
@@ -41,10 +40,12 @@ namespace Rendering
             _renderableFactory(std::move(renderableFactory)),
             _pipelineStateObjects(std::unordered_map<std::string, std::shared_ptr<IPSO>>()),
             _nextRenderableID(0),
-            _freeIDs(std::vector<RenderableID>()),
-            _renderables(std::array<std::unordered_map<RenderableID, std::shared_ptr<IRenderable>>, 5>()),
+            _freeIDs(std::vector<uint64_t>()),
+            _renderables(std::array<std::unordered_map<uint64_t, std::shared_ptr<IRenderable>>, 5>()),
             _lights(Lights{}),
-            _debugUICallback([]() {})
+            _debugUICallback([]() {}),
+            _aspect({0.0f, 0.0f, 1.0f, 1.0f}),
+            _drawableSize({100.0f, 100.0f})
         {}
 
         virtual ~IRenderer() = default;
@@ -56,11 +57,10 @@ namespace Rendering
 
         virtual void update(const glm::mat4x4& viewMatrix) = 0;
 
-        void addDirectionalLight(const DirectionalLight& light);
-        void addPointLight(const PointLight& light);
+
+        void setDirectionalLight(const DirectionalLight& light, int index);
+        void setPointLight(const PointLight& light, int index);
         void clearLights();
-        void removeLastDirectionalLight();
-        void removeLastPointLight();
         void setAmbientGlobalLight(const glm::vec4& color);
         void setLights(const Lights& lights);
 
@@ -70,9 +70,29 @@ namespace Rendering
             const std::vector<std::shared_ptr<Texture>>& textures,
             RenderLayer layer = RenderLayer::OPAQUE
             );
+
         std::shared_ptr<IRenderable> removeRenderable(uint64_t index);
         void setVisible(uint64_t index, bool visible);
         void setWireframe(uint64_t index, bool wireframe);
+
+        template <typename T>
+        std::shared_ptr<T> getMaterial(uint64_t id)
+        {
+            for (auto& layer : _renderables)
+            {
+                if (layer.contains(id))
+                {
+                    auto renderable = layer[id];
+                    auto material = renderable->getMaterial<T>();
+                    if (material)
+                    {
+                        return material;
+                    }
+                }
+            }
+            return nullptr;
+        }
+
         const glm::mat4x4& modelMatrix(uint64_t index);
         void modelMatrix(uint64_t index, const glm::mat4x4& matrix);
         void loadPSOs(const std::unordered_map<std::string, const PSOConfig>& psoConfigs);
@@ -80,7 +100,9 @@ namespace Rendering
 
         void setDebugUICallback(std::function<void()> callback);
 
-        virtual glm::mat4x4 getProjectionMatrix() const = 0;
+        [[nodiscard]] virtual glm::mat4x4 getProjectionMatrix() const = 0;
+
+        virtual void setAspect(const std::array<float, 4>& aspect) { _aspect = aspect; }
 
 
     protected:
@@ -89,13 +111,16 @@ namespace Rendering
 
         std::unordered_map<std::string, std::shared_ptr<IPSO>> _pipelineStateObjects;
 
-        RenderableID _nextRenderableID;
-        std::vector<RenderableID> _freeIDs;
-        std::array<std::unordered_map<RenderableID, std::shared_ptr<IRenderable>>, 5> _renderables;
+        uint64_t _nextRenderableID;
+        std::vector<uint64_t> _freeIDs;
+        std::array<std::unordered_map<uint64_t, std::shared_ptr<IRenderable>>, 5> _renderables;
 
         Lights _lights; // global lights structure, can be used by the renderables
 
         std::function<void()> _debugUICallback;
+
+        std::array<float, 4> _aspect;
+        std::array<float, 2> _drawableSize;
     };
 }
 

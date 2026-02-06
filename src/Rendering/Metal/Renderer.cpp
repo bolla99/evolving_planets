@@ -107,12 +107,12 @@ namespace Rendering::Metal
         const auto encoder = buffer->renderCommandEncoder(passDescriptor.get());
         
         // SET DRAWABLE SIZE BUFFER
-        float drawableSize[2] = {
+        _drawableSize = {
             (float)_drawable->texture()->width(),
             (float)_drawable->texture()->height()
         };
         
-        encoder->setViewport({drawableSize[0] / 3.0f, 0.0f, 2.0f * (drawableSize[0] / 3.0f), 3.0f * drawableSize[1] / 4.0f, 0, 1});
+        encoder->setViewport({_aspect[0] * _drawableSize[0], _aspect[1] * _drawableSize[1], _aspect[2] * (_drawableSize[0]), _aspect[3] * _drawableSize[1], 0, 1});
          
         //encoder->setViewport({0, 0, drawableSize[0], drawableSize[1], 0, 1});
 
@@ -157,7 +157,7 @@ namespace Rendering::Metal
         );
         
         auto drawableSizeBuffer = NS::TransferPtr(_device->newBuffer(
-            &drawableSize,
+            &_drawableSize,
             2 * sizeof(float),
             MTL::ResourceStorageModeShared
         ));
@@ -167,15 +167,8 @@ namespace Rendering::Metal
             0,
             20 // buffer index 2
         );*/
-        
-        auto aspectRatio = 2.0f * (drawableSize[0] / 3.0f) / drawableSize[1];
-        //auto aspectRatio = drawableSize[0] / drawableSize[1];
 
-        const auto viewProjectionMatrix = glm::perspective(
-            glm::radians(55.0f),
-            aspectRatio,
-            0.1f,
-            1000.0f) * viewMatrix;
+        const auto viewProjectionMatrix = getProjectionMatrix() * viewMatrix;
 
         encoder->setVertexBytes(
             &viewProjectionMatrix,
@@ -239,7 +232,7 @@ namespace Rendering::Metal
     {
         return glm::perspective(
             glm::radians(55.0f),
-            (float)_drawable->texture()->width() / (float)_drawable->texture()->height(),
+            (_aspect[2] * static_cast<float>(_drawableSize[0])) / (_aspect[3] * static_cast<float>(_drawableSize[1])),
             0.1f,
             1000.0f);
     }

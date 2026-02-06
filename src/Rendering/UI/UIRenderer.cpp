@@ -7,7 +7,7 @@
 
 namespace Rendering::UI
 {
-    std::vector<RenderableID> UIRenderer::submitWindow(const UIWindow& window) const
+    std::vector<uint64_t> UIRenderer::submitWindow(const UIWindow& window) const
     {
         float depth = 0.02f;
         std::vector<uint64_t> renderableIDs;
