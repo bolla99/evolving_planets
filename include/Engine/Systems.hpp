@@ -14,31 +14,29 @@ struct Context
 {
     Rendering::IRenderer* renderer;
     SDL_Window* window;
+    AssetManager* assetManager;
 
-    bool isValid() const
+    [[nodiscard]] bool isValid() const
     {
-        return renderer != nullptr && window != nullptr;
+        return renderer != nullptr && window != nullptr && assetManager != nullptr;
     }
 };
 
-class ISystem
+struct ISystem
 {
-public:
     virtual void update(World& world, const Context& ctx, float dt) = 0;
     virtual ~ISystem() = default;
 };
 
 // this system takes entities that has a transform and a renderable id, and update the renderable model matrix
 // from their transform
-class TransformSystem : public ISystem
+struct TransformSystem : public ISystem
 {
-public:
     void update(World& world, const Context& ctx, float dt) override
     {
         auto entities = world.query<RenderableComponent, Transform>();
         for (auto& entity : entities)
         {
-            std::cout << "Entity: " << entity << std::endl;
             auto rc = world.getComponent<RenderableComponent>(entity);
             auto transform = world.getComponent<Transform>(entity);
             ctx.renderer->modelMatrix(rc.id, transform.modelMatrix());
@@ -46,9 +44,8 @@ public:
     }
 };
 
-class MouseRaySystem : public ISystem
+struct MouseRaySystem : public ISystem
 {
-public:
     void update(World& world, const Context& ctx, float dt) override
     {
         if (!ctx.isValid()) throw std::runtime_error("Invalid context");
@@ -56,19 +53,25 @@ public:
         if (cameras.empty()) return;
         auto activeCamera = cameras[0];
         auto activeCameraComponent = world.getComponent<CameraComponent>(activeCamera);
+        auto camera = activeCameraComponent.camera;
         auto mouseRays = world.query<MouseRay>();
         if (mouseRays.empty()) return;
         auto& mouseRay = world.getComponent<MouseRay>(mouseRays[0]);
-        auto mr = App::mouseRay(activeCameraComponent.camera->getViewMatrix(), ctx.window, ctx.renderer);
+        auto viewports = world.query<ViewportComponent>();
+        if (viewports.empty()) return;
+        auto vp = world.getComponent<ViewportComponent>(viewports[0]);
+        auto drawableSize = ctx.renderer->getDrawableSize();
+        auto vpData = vp.getData({drawableSize[0], drawableSize[1]});
+        auto projectionMatrix = glm::perspective(glm::radians(camera->fov), vpData.first, camera->nearPlane, camera->farPlane);
+        auto mr = App::mouseRay(activeCameraComponent.camera->getViewMatrix(), projectionMatrix, ctx.window, ctx.renderer);
         mouseRay.origin = mr[0];
         mouseRay.direction = mr[1];
     }
 
 };
 
-class RenderRegistrationSystem : ISystem
+struct RenderRegistrationSystem : ISystem
 {
-public:
     void update(World& world, const Context& ctx, float dt) override
     {
         auto entities = world.query<MeshComponent, RenderConfigComponent>();
@@ -85,9 +88,8 @@ public:
     }
 };
 
-class SetLightsSystem : ISystem
+struct SetLightsSystem : ISystem
 {
-public:
     void update(World& world, const Context& ctx, float dt) override
     {
         auto directionalLights = world.query<DirectionalLightComponent>();
@@ -107,9 +109,8 @@ public:
     }
 };
 
-class MouseIntersectionSystem : public ISystem
+struct MouseIntersectionSystem : public ISystem
 {
-public:
     void update(World& world, const Context& ctx, float dt) override
     {
         auto mouseRays = world.query<MouseRay>();
@@ -139,9 +140,8 @@ public:
     }
 };
 
-class UpdateLightsWithTransformSystem : ISystem
+struct UpdateLightsWithTransformSystem : ISystem
 {
-public:
     void update(World& world, const Context& ctx, float dt) override
     {
         // set point lights
@@ -161,9 +161,100 @@ public:
             auto transform = world.getComponent<Transform>(e);
             light.direction = glm::normalize(transform.rotation * light.direction);
         }
-
     }
+};
 
+struct UpdateMaterialTintSystem : ISystem
+{
+    void update(World& world, const Context& ctx, float dt) override
+    {
+        auto entities = world.query<TintMaterialComponent, RenderableComponent>();
+        for (auto& entity : entities)
+        {
+            auto& tintComp = world.getComponent<TintMaterialComponent>(entity);
+            auto& renderableComp = world.getComponent<RenderableComponent>(entity);
+            // get bytes from material
+            auto bytes = std::vector<std::byte>(sizeof(Tint));
+            memcpy(bytes.data(), &tintComp.material, sizeof(Tint));
+            // set bytes to the Corresponding Type
+            // setMaterial search for a material of given type for the given renderable, and if found
+            // data is overridden
+            ctx.renderer->setMaterial(bytes, TintType, renderableComp.id);
+        }
+    }
+};
+
+struct MeshLoadingSystem : ISystem
+{
+    void update(World& world, const Context& ctx, float dt) override
+    {
+        auto entities = world.query<MeshRequestComponent>();
+        for (auto e : entities)
+        {
+            std::cout << "Loading mesh: " << world.getComponent<MeshRequestComponent>(e).path << std::endl;
+            auto path = world.getComponent<MeshRequestComponent>(e).path;
+            if (auto mesh = ctx.assetManager->getMesh(path))
+            {
+                world.addComponent<MeshComponent>(e, {mesh, path});
+                world.removeComponent<MeshRequestComponent>(e);
+            }
+        }
+    }
+};
+struct RendererUpdateSystem : ISystem
+{
+    void update(World& world, const Context& ctx, float dt) override
+    {
+        auto cameras = world.query<CameraComponent>();
+        if (cameras.empty()) return;
+        auto camera = world.getComponent<CameraComponent>(cameras[0]).camera;
+        auto viewports = world.query<ViewportComponent>();
+        if (viewports.empty()) return;
+        auto vp = world.getComponent<ViewportComponent>(viewports[0]);
+        auto drawableSize = ctx.renderer->getDrawableSize();
+        auto [aspectRatio, normalizedViewport] = vp.getData({drawableSize[0], drawableSize[1]});
+        auto projectionMatrix = glm::perspective(glm::radians(camera->fov), aspectRatio, camera->nearPlane, camera->farPlane);
+        ctx.renderer->update(camera->getViewMatrix(), projectionMatrix, normalizedViewport);
+    }
+};
+
+struct RectMaterialComponentSystem final : ISystem
+{
+    void update(World& world, const Context& ctx, float dt) override
+    {
+        for (const auto entities = world.query<RectMaterialComponent, RenderableComponent>(); auto& entity : entities)
+        {
+            auto bytes = std::vector<std::byte>(sizeof(RectMaterial));
+            auto& [material] = world.getComponent<RectMaterialComponent>(entity);
+            auto& [id] = world.getComponent<RenderableComponent>(entity);
+            memcpy(bytes.data(), &material, sizeof(RectMaterial));
+            ctx.renderer->setMaterial(bytes, RectType, id);
+        }
+    }
+};
+
+// find viewport size material, then look for a viewport, and if found get the size and apply to material,
+// then check the render config associated to the viewport size material and set it to the pso through the renderer
+struct ViewportSizeMaterialSystem final : ISystem
+{
+    void update(World& world, const Context& ctx, float dt) override
+    {
+        for (const auto entities = world.query<ViewportSizeMaterialComponent, RenderConfigComponent>(); auto& entity : entities)
+        {
+            auto viewportEntity = world.query<ViewportComponent>();
+            if (viewportEntity.empty()) return;
+            auto viewport = world.getComponent<ViewportComponent>(viewportEntity[0]);
+            auto viewportData = viewport.getData({ctx.renderer->getDrawableSize()[0], ctx.renderer->getDrawableSize()[1]}, false);
+            auto bytes = std::vector<std::byte>(sizeof(ViewportSize));
+            auto& [material] = world.getComponent<ViewportSizeMaterialComponent>(entity);
+            material.width = viewportData.second[2];
+            material.height = viewportData.second[3];
+            auto& renderConfig = world.getComponent<RenderConfigComponent>(entity);
+            memcpy(bytes.data(), &material, sizeof(ViewportSize));
+            ctx.renderer->setMaterial(renderConfig.psoName, bytes, ViewportSizeType);
+            break;
+        }
+    }
 };
 
 #endif //EVOLVING_PLANETS_SYSTEMS_HPP
