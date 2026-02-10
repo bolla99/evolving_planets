@@ -61,9 +61,7 @@ const std::vector<uint32_t>& Mesh::getFacesData() const
     return _faces;
 }
 
-std::shared_ptr<Mesh> Mesh::quad(
-        const float* pos, const float w, const float h, const float* color, float uvWidth, float uvHeight
-        )
+std::shared_ptr<Mesh> Mesh::quad(const glm::vec4& rect, float depth, const glm::vec4& color, float uvWidth, float uvHeight)
 {
     std::vector<Core::VertexAttributeName> attributeNames = {
         Core::VertexAttributeName::Position,
@@ -81,10 +79,10 @@ std::shared_ptr<Mesh> Mesh::quad(
 
     // Position data for 4 vertices
     std::vector<float> positions = {
-        pos[0], pos[1], pos[2], // v0
-        pos[0] + w, pos[1], pos[2], // v1
-        pos[0] + w, pos[1] + h, pos[2], // v2
-        pos[0], pos[1] + h, pos[2] // v3
+        rect[0], rect[1], depth, // v0
+        rect[0] + rect[2], rect[1], depth, // v1
+        rect[0] + rect[2], rect[1] + rect[3], depth, // v2
+        rect[0], rect[1] + rect[3], depth // v3
     };
 
     vertexData[0].resize(positions.size() * sizeof(float));

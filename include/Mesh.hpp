@@ -46,9 +46,7 @@ public:
 
 
     // FACTORY METHODS
-    static std::shared_ptr<Mesh> quad(
-        const float* pos, float w, float h, const float* color, float uvWidth, float uvHeight
-        );
+    static std::shared_ptr<Mesh> quad(const glm::vec4& rect, float depth, const glm::vec4& color, float uvWidth, float uvHeight);
 
     static glm::vec4 noVertexColor()
     {
@@ -111,7 +109,15 @@ public:
     [[nodiscard]] glm::vec2 uvFromRay(glm::vec3 origin, glm::vec3 direction) const;
     [[nodiscard]] std::pair<bool, glm::vec3> rayIntersection(glm::vec3 origin, glm::vec3 direction) const;
 
-
+    [[nodiscard]] std::string info() const
+    {
+        auto info = std::string();
+        info += "Mesh with " + std::to_string(_numVertices) + " vertices and " + std::to_string(_numFaces) + " faces\n";
+        info += std::string("Normals: ") + (HasAttribute(Core::VertexAttributeName::Normal) ? "yes\n" : "no\n");
+        info += std::string("Vertex Color: ") + (HasAttribute(Core::VertexAttributeName::Color) ? "yes\n" : "no\n");
+        info += std::string("Texture Coordinates: ") + (HasAttribute(Core::VertexAttributeName::TexCoord) ? "yes\n" : "no\n");
+        return info;
+    }
 
 
 private:
