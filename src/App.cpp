@@ -114,7 +114,7 @@ App::~App()
     std::cout << "SDL_Quit call ended" << std::endl;
 }
 
-std::array<glm::vec3, 2> App::mouseRay(glm::mat4 viewMatrix, SDL_Window* window, Rendering::IRenderer* renderer)
+std::array<glm::vec3, 2> App::mouseRay(glm::mat4 viewMatrix, glm::mat4 projectionMatrix, SDL_Window* window, Rendering::IRenderer* renderer)
 {
     // set mouse ray casting
     int mouseX, mouseY;
@@ -124,7 +124,7 @@ std::array<glm::vec3, 2> App::mouseRay(glm::mat4 viewMatrix, SDL_Window* window,
 
     auto mouseXNDC = (2.0f * static_cast<float>(mouseX)) / static_cast<float>(screenWidth) - 1.0f;
     auto mouseYNDC = 1.0f - (2.0f * static_cast<float>(mouseY)) / static_cast<float>(screenHeight); // Y is inverted in window coordinates
-    glm::mat4 invVP = glm::inverse(renderer->getProjectionMatrix() * viewMatrix);
+    glm::mat4 invVP = glm::inverse(projectionMatrix * viewMatrix);
     auto mouseNear = glm::vec4(mouseXNDC, mouseYNDC, 0.0f, 1.0f);
     auto mouseFar = glm::vec4(mouseXNDC, mouseYNDC, 1.0f, 1.0f);
     mouseNear = invVP * mouseNear;

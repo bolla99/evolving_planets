@@ -5,12 +5,21 @@
 #define MTL_PRIVATE_IMPLEMENTATION
 
 #include "App.hpp"
+#include "Rendering/EvolvingPlanetsApp.hpp"
+#include "PreCompileSettings.hpp"
+#include "RTGPApp.hpp"
 
 int main()
 {
     try
     {
-        App(800, 600).init().run();
+#if APP == 0
+        auto app = EvolvingPlanetsApp(800, 600);
+#elif APP == 1
+        auto app = RTGPApp(800, 600);
+#endif
+        app.init();
+        app.run();
     }
     catch (const std::exception& e)
     {
