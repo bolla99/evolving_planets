@@ -26,7 +26,7 @@ public:
     uint64_t createEntity(const std::string& name)
     {
         auto id = _entities.newID();
-        addComponent<NameComponent>(id, {name});
+        addComponent<NameComponent>(id, NameComponent(name));
         return id;
     }
 
@@ -85,22 +85,6 @@ public:
             }
         }
         return matches;
-    }
-
-    void entityInspector(uint64_t entity)
-    {
-        if (hasComponent<Transform>(entity))
-        {
-            DrawComponentUI(getComponent<Transform>(entity));
-        }
-        if (hasComponent<DirectionalLightComponent>(entity))
-        {
-            DrawComponentUI(getComponent<DirectionalLightComponent>(entity));
-        }
-        if (hasComponent<PointLightComponent>(entity))
-        {
-            DrawComponentUI(getComponent<PointLightComponent>(entity));
-        }
     }
 
 private:
