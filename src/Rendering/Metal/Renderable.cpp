@@ -103,8 +103,8 @@ namespace Rendering::Metal
             throw std::runtime_error("Invalid command encoder type");
         }
 
-        // bind pso
-        commandEncoder->bind(_pso.get());
+        // bind pso ( skip because it binds in the renderer loop)
+        //commandEncoder->bind(_pso.get());
         // set vertex buffers
         for (int i = 0; i < _buffers.size(); i++)
         {
@@ -125,17 +125,19 @@ namespace Rendering::Metal
         metalCommandEncoder->setVertexBuffer(mvpBuffer.get(), 0, 29);
 
         // set materials
-        for (auto& material : _materials)
+        for (int i = 0; i < _materials.size(); i++)
         {
-            auto data = material->bytes();
-            auto materialBuffer = NS::TransferPtr(metalCommandEncoder->device()->newBuffer(data, material->size(), MTL::ResourceStorageModeShared));
-            if (material->info.stage == MaterialStage::Vertex)
+            const auto& material = _materials[i];
+            auto info = _materialInfos[i];
+            auto data = material.data();
+            auto materialBuffer = NS::TransferPtr(metalCommandEncoder->device()->newBuffer(data, material.size(), MTL::ResourceStorageModeShared));
+            if (info.stage == MaterialStage::Vertex)
             {
-                metalCommandEncoder->setVertexBuffer(materialBuffer.get(), 0, material->info.bufferIndex);
+                metalCommandEncoder->setVertexBuffer(materialBuffer.get(), 0, info.bufferIndex);
             }
             else
             {
-                metalCommandEncoder->setFragmentBuffer(materialBuffer.get(), 0, material->info.bufferIndex);
+                metalCommandEncoder->setFragmentBuffer(materialBuffer.get(), 0, info.bufferIndex);
             }
         }
 

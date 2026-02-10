@@ -32,8 +32,8 @@ namespace Rendering::Metal
             );
         ~Renderer() override;
 
-        void update(const glm::mat4x4& viewMatrix) override;
-        [[nodiscard]] glm::mat4x4 getProjectionMatrix() const override;
+        void update(const glm::mat4x4& viewMatrix, glm::mat4x4& projectionMatrix, const glm::vec4& viewportNormalizedRect = {0.0f, 0.0f, 1.0f, 1.0f}) override;
+        //[[nodiscard]] glm::mat4x4 getProjectionMatrix() const override;
 
 
     private:

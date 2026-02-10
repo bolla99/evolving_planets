@@ -9,10 +9,10 @@
 
 enum MaterialType
 {
-    VCPHONG,
+    TintType,
+    RectType,
+    ViewportSizeType
 };
-
-template <class T> struct MaterialTraits;
 
 enum MaterialStage
 {
@@ -33,59 +33,56 @@ struct MaterialInfo
     int bufferIndex;
 };
 
-// ABSTRACT CLASS
-struct IMaterial
-{
-    virtual ~IMaterial() = default;
-    virtual size_t size() const = 0;
-    const virtual void* bytes() const = 0;
-
-    MaterialInfo info{};
-
-    static std::shared_ptr<IMaterial> factory(MaterialInfo info);
-
-    template <typename T>
-    static std::shared_ptr<T> get(const std::shared_ptr<IMaterial>& mat)
-    {
-        if (mat == nullptr) return nullptr;
-        if (mat->info.type == MaterialTraits<T>::type)
-        {
-            return static_pointer_cast<T>(mat);
-        }
-        else return nullptr;
-    }
-};
-
 // MATERIALS
-struct MatVCPHONG : public IMaterial
+struct Tint
 {
-    struct Data
-    {
-        uint8_t addTint = 0;
-        uint8_t padding[15]{};
-        glm::vec4 tint = glm::vec4{1.0f, 1.0f, 1.0f, 1.0f};
-    };
-    Data data;
-
-    [[nodiscard]] size_t size() const override { return sizeof(Data); }
-    [[nodiscard]] const void* bytes() const override { return &data; }
+    uint8_t addTint = 0;
+    uint8_t _padding[15]{};
+    glm::vec4 tintColor = glm::vec4(1.0f);
 };
-template <> struct MaterialTraits<MatVCPHONG> { static constexpr MaterialType type = MaterialType::VCPHONG; };
 
-inline std::shared_ptr<IMaterial> IMaterial::factory(const MaterialInfo info)
+struct RectMaterial
 {
-    switch (info.type)
-    {
-    case VCPHONG:
-        {
-            auto material = std::make_shared<MatVCPHONG>();
-            material->info = info;
-            return material;
-        }
-    default: throw std::runtime_error("Unknown material type");
-    }
-}
+    glm::vec4 rect = {0.0f, 0.0f, 100.0f, 100.0f};
+};
 
+struct ViewportSize
+{
+    float width = 100.0f;
+    float height = 100.0f;
+    // padding for 16byte alignment
+    float padding1 = 0.0f;
+    float padding2 = 0.0f;
+};
+
+constexpr std::vector<std::byte> getDefaultBytes(MaterialType type)
+{
+    switch (type)
+    {
+    case TintType:
+        {
+            auto bytes = std::vector<std::byte>(sizeof(Tint));
+            constexpr auto material = Tint();
+            std::memcpy(bytes.data(), &material, sizeof(Tint));
+            return bytes;
+        }
+    case RectType:
+        {
+            auto bytes = std::vector<std::byte>(sizeof(RectMaterial));
+            constexpr auto material = RectMaterial();
+            std::memcpy(bytes.data(), &material, sizeof(RectMaterial));
+            return bytes;
+        }
+    case ViewportSizeType:
+        {
+            auto bytes = std::vector<std::byte>(sizeof(ViewportSize));
+            constexpr auto material = ViewportSize();
+            std::memcpy(bytes.data(), &material, sizeof(ViewportSize));
+            return bytes;
+        }
+    }
+    throw std::runtime_error("Invalid material type");
+}
 
 
 #endif //EVOLVING_PLANETS_MATERIAL_HPP

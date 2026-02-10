@@ -44,7 +44,6 @@ namespace Rendering::Metal
 
         psoDescriptor->setDepthAttachmentPixelFormat(MTL::PixelFormat::PixelFormatDepth32Float);
 
-
         psoDescriptor->colorAttachments()->object(0)->setBlendingEnabled(YES);
         psoDescriptor->colorAttachments()->object(0)->setRgbBlendOperation(MTL::BlendOperationAdd);
         psoDescriptor->colorAttachments()->object(0)->setAlphaBlendOperation(MTL::BlendOperationAdd);

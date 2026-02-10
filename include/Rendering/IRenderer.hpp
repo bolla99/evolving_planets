@@ -44,8 +44,9 @@ namespace Rendering
             _renderables(std::array<std::unordered_map<uint64_t, std::shared_ptr<IRenderable>>, 5>()),
             _lights(Lights{}),
             _debugUICallback([]() {}),
-            _aspect({0.0f, 0.0f, 1.0f, 1.0f}),
-            _drawableSize({100.0f, 100.0f})
+            _drawableSize({800.0f, 600.0f}),
+            _materials(std::unordered_map<std::string, std::vector<std::vector<std::byte>>>()),
+            _materialInfos(std::unordered_map<std::string, std::vector<MaterialInfo>>())
         {}
 
         virtual ~IRenderer() = default;
@@ -55,54 +56,46 @@ namespace Rendering
         IRenderer(IRenderer&&) = delete;
         IRenderer& operator=(IRenderer&&) = delete;
 
-        virtual void update(const glm::mat4x4& viewMatrix) = 0;
+        // UPDATE
+        virtual void update(const glm::mat4x4& viewMatrix, glm::mat4x4& projectionMatrix, const glm::vec4& viewportNormalizedRect = {0.0f, 0.0f, 1.0f, 1.0f}) = 0;
 
-
+        // LIGHTS API
         void setDirectionalLight(const DirectionalLight& light, int index);
         void setPointLight(const PointLight& light, int index);
         void clearLights();
         void setAmbientGlobalLight(const glm::vec4& color);
         void setLights(const Lights& lights);
 
+        // RENDERABLE API
         uint64_t addRenderable(
             const Mesh& mesh,
             const PSOConfig& psoConfig,
             const std::vector<std::shared_ptr<Texture>>& textures,
             RenderLayer layer = RenderLayer::OPAQUE
             );
-
         std::shared_ptr<IRenderable> removeRenderable(uint64_t index);
         void setVisible(uint64_t index, bool visible);
         void setWireframe(uint64_t index, bool wireframe);
-
-        template <typename T>
-        std::shared_ptr<T> getMaterial(uint64_t id)
+        void setMaterial(const std::vector<std::byte>& materialBytes, MaterialType type, uint64_t index)
         {
             for (auto& layer : _renderables)
             {
-                if (layer.contains(id))
-                {
-                    auto renderable = layer[id];
-                    auto material = renderable->getMaterial<T>();
-                    if (material)
-                    {
-                        return material;
-                    }
-                }
+                if (layer.contains(index)) layer[index]->setMaterial(materialBytes, type);
             }
-            return nullptr;
         }
-
         const glm::mat4x4& modelMatrix(uint64_t index);
         void modelMatrix(uint64_t index, const glm::mat4x4& matrix);
+
+        // PSO API
         void loadPSOs(const std::unordered_map<std::string, const PSOConfig>& psoConfigs);
         void loadPSO(const PSOConfig& config);
+        void setMaterial(const std::string& name, const std::vector<std::byte>& materialBytes, MaterialType type);
 
         void setDebugUICallback(std::function<void()> callback);
 
-        [[nodiscard]] virtual glm::mat4x4 getProjectionMatrix() const = 0;
+        //[[nodiscard]] virtual glm::mat4x4 getProjectionMatrix() const = 0;
 
-        virtual void setAspect(const std::array<float, 4>& aspect) { _aspect = aspect; }
+        std::array<float, 2> getDrawableSize() const { return _drawableSize; }
 
 
     protected:
@@ -110,6 +103,8 @@ namespace Rendering
         std::unique_ptr<IRenderableFactory> _renderableFactory;
 
         std::unordered_map<std::string, std::shared_ptr<IPSO>> _pipelineStateObjects;
+        std::unordered_map<std::string, std::vector<std::vector<std::byte>>> _materials;
+        std::unordered_map<std::string, std::vector<MaterialInfo>> _materialInfos;
 
         uint64_t _nextRenderableID;
         std::vector<uint64_t> _freeIDs;
@@ -119,7 +114,6 @@ namespace Rendering
 
         std::function<void()> _debugUICallback;
 
-        std::array<float, 4> _aspect;
         std::array<float, 2> _drawableSize;
     };
 }

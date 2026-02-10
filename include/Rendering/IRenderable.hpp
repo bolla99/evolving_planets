@@ -12,6 +12,12 @@
 
 namespace Rendering
 {
+    /**
+     * At its basic, a renderable holds a reference to a pipeline state object, a vertices count, faces count
+     * and a collection of materials, which are simply vectors of bytes that should be bind according to material infos
+     * Others members are optional and could be moved elsewhere; the derived class should holds the gpu buffers and should
+     * be able to render itself by receiving the render command encoder and by having a reference to the right pso
+     */
     class IRenderable
     {
     public:
@@ -25,10 +31,12 @@ namespace Rendering
         _verticesCount(verticesCount),
         _facesCount(facesCount)
         {
-            // create materials from infos
+            // create materials
             for (const auto& materialInfo : pso->materials)
             {
-                _materials.emplace_back(IMaterial::factory(materialInfo));
+                if (materialInfo.frequency == PerFrame) continue;
+                _materialInfos.emplace_back(materialInfo);
+                _materials.emplace_back(getDefaultBytes(materialInfo.type));
             }
 
             _pso = std::move(pso);
@@ -50,29 +58,33 @@ namespace Rendering
             _modelMatrix = matrix;
         }
 
-        template <typename T>
-        std::shared_ptr<T> getMaterial()
+        void setMaterial(const std::vector<std::byte>& materialBytes, MaterialType type)
         {
-            for (const auto& mat : _materials)
+            for (int i = 0; i < _materials.size(); i++)
             {
-                auto material = IMaterial::get<T>(mat);
-                if (material) return material;
+                if (_materialInfos[i].type == type)
+                {
+                    auto def = getDefaultBytes(type);
+                    assert(def.size() == materialBytes.size() && "Material size mismatch");
+                    _materials[i] = materialBytes;
+                }
             }
-            return nullptr;
         }
 
         // PUBLIC FIELDS
         bool visible = true;
         bool wireframe = false;
 
+        std::shared_ptr<IPSO> _pso;
+
     protected:
         // PROTECTED FIELDS
-        std::shared_ptr<IPSO> _pso;
         glm::mat4x4 _modelMatrix;
         int _verticesCount = 0;
         int _facesCount = 0;
 
-        std::vector<std::shared_ptr<IMaterial>> _materials;
+        std::vector<std::vector<std::byte>> _materials;
+        std::vector<MaterialInfo> _materialInfos;
     };
 }
 

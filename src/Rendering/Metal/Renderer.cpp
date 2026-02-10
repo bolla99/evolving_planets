@@ -10,6 +10,8 @@
 #include <iostream>
 #include <ranges>
 #include <set>
+#include <vector>
+#include <unordered_map>
 
 #include <Rendering/Metal/CommandEncoder.hpp>
 #include <Rendering/Metal/PSOFactory.hpp>
@@ -70,20 +72,33 @@ namespace Rendering::Metal
     }
 
     // rendering loop
-    void Renderer::update(const glm::mat4x4& viewMatrix)
+    void Renderer::update(const glm::mat4x4& viewMatrix, glm::mat4x4& projectionMatrix, const glm::vec4& viewportNormalizedRect)
     {
         auto pool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
         const auto queue = NS::TransferPtr(_device->newCommandQueue());
         _drawable = _layer->nextDrawable();
 
+        // SET DRAWABLE SIZE BUFFER
+        _drawableSize = {
+            (float)_drawable->texture()->width(),
+            (float)_drawable->texture()->height()
+        };
+
+        // PASS DESCRIPTOR 1
+        const auto preliminarClearColorPassDescriptor = NS::TransferPtr(MTL::RenderPassDescriptor::alloc()->init());
+        preliminarClearColorPassDescriptor->colorAttachments()->object(0)->setTexture(_drawable->texture());
+        preliminarClearColorPassDescriptor->colorAttachments()->object(0)->setLoadAction(MTL::LoadAction::LoadActionClear);
+        preliminarClearColorPassDescriptor->colorAttachments()->object(0)->setClearColor(MTL::ClearColor{0.0f, 0.0f, 0.0f, 1.0});
+        preliminarClearColorPassDescriptor->colorAttachments()->object(0)->setStoreAction(MTL::StoreAction::StoreActionStore);
+
+        // PASS DESCRIPTOR 2
         const auto passDescriptor = NS::TransferPtr(MTL::RenderPassDescriptor::alloc()->init());
         passDescriptor->colorAttachments()->object(0)->setTexture(_drawable->texture());
         passDescriptor->colorAttachments()->object(0)->setLoadAction(MTL::LoadAction::LoadActionClear);
-        passDescriptor->colorAttachments()->object(0)->setClearColor(MTL::ClearColor{0.8f, 0.8f, 0.8f, 1.0});
+        passDescriptor->colorAttachments()->object(0)->setClearColor(MTL::ClearColor{0.5f, 0.5f, 0.5f, 1.0});
         passDescriptor->colorAttachments()->object(0)->setStoreAction(MTL::StoreAction::StoreActionStore);
 
-        // depth texture
-        // 1. Crea il descriptor
+        // DEPTH TEXTURE DESCRIPTOR
         auto depthDesc = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
         depthDesc->setTextureType(MTL::TextureType2D);
         depthDesc->setPixelFormat(MTL::PixelFormatDepth32Float);
@@ -92,28 +107,32 @@ namespace Rendering::Metal
         depthDesc->setStorageMode(MTL::StorageModePrivate);
         depthDesc->setUsage(MTL::TextureUsageRenderTarget);
 
-        // 2. Crea la texture
+        // DEPTH TEXTURE
         auto depthTexture = NS::TransferPtr(_device->newTexture(depthDesc.get()));
-
         passDescriptor->depthAttachment()->setTexture(depthTexture.get());
         passDescriptor->depthAttachment()->setLoadAction(MTL::LoadAction::LoadActionClear);
         passDescriptor->depthAttachment()->setStoreAction(MTL::StoreAction::StoreActionStore);
         passDescriptor->depthAttachment()->setClearDepth(1.0);
 
+        // CREATE BUFFER
         const auto buffer = queue->commandBuffer();
+
+        // ENCODERS
+
+        const auto clearColorEncoder = buffer->renderCommandEncoder(preliminarClearColorPassDescriptor.get());
+        clearColorEncoder->setViewport({0, 0, _drawableSize[0], _drawableSize[1], 0, 1});
+        clearColorEncoder->setScissorRect({0, 0, static_cast<NS::UInteger>(_drawableSize[0]), static_cast<NS::UInteger>(_drawableSize[1])});
+        clearColorEncoder->endEncoding();
 
         // encoder ownership is never obtained
         // an eventual abstract wrapper should not take ownership of the encoder
         const auto encoder = buffer->renderCommandEncoder(passDescriptor.get());
-        
-        // SET DRAWABLE SIZE BUFFER
-        _drawableSize = {
-            (float)_drawable->texture()->width(),
-            (float)_drawable->texture()->height()
-        };
-        
-        encoder->setViewport({_aspect[0] * _drawableSize[0], _aspect[1] * _drawableSize[1], _aspect[2] * (_drawableSize[0]), _aspect[3] * _drawableSize[1], 0, 1});
-         
+
+        auto viewport = MTL::Viewport{viewportNormalizedRect[0] * _drawableSize[0], viewportNormalizedRect[1] * _drawableSize[1], viewportNormalizedRect[2] * (_drawableSize[0]), viewportNormalizedRect[3] * _drawableSize[1], 0, 1};
+        encoder->setViewport(viewport);
+        auto scissorRect = MTL::ScissorRect(viewport.originX, viewport.originY, viewport.width, viewport.height);
+        encoder->setScissorRect(scissorRect);
+
         //encoder->setViewport({0, 0, drawableSize[0], drawableSize[1], 0, 1});
 
         ImGui_ImplMetal_NewFrame(passDescriptor.get());
@@ -122,16 +141,18 @@ namespace Rendering::Metal
 
         // set depth test
         auto depthStencilDescriptor = NS::TransferPtr(MTL::DepthStencilDescriptor::alloc()->init());
-        depthStencilDescriptor->setDepthCompareFunction(MTL::CompareFunctionLess);
+        depthStencilDescriptor->setDepthCompareFunction(MTL::CompareFunctionLessEqual);
         depthStencilDescriptor->setDepthWriteEnabled(true);
         auto depthStencilState = NS::TransferPtr(_device->newDepthStencilState(depthStencilDescriptor.get()));
 
         encoder->setDepthStencilState(depthStencilState.get());
 
+        /*
         auto depthStencilDescriptorTransparent = NS::TransferPtr(MTL::DepthStencilDescriptor::alloc()->init());
-        depthStencilDescriptor->setDepthCompareFunction(MTL::CompareFunctionAlways);
-        depthStencilDescriptor->setDepthWriteEnabled(false);
+        depthStencilDescriptorTransparent->setDepthCompareFunction(MTL::CompareFunctionAlways);
+        depthStencilDescriptorTransparent->setDepthWriteEnabled(false);
         auto depthStencilStateTransparent = NS::TransferPtr(_device->newDepthStencilState(depthStencilDescriptor.get()));
+        */
 
         // set sampler
         auto samplerDescriptor = NS::TransferPtr(MTL::SamplerDescriptor::alloc()->init());
@@ -168,7 +189,7 @@ namespace Rendering::Metal
             20 // buffer index 2
         );*/
 
-        const auto viewProjectionMatrix = getProjectionMatrix() * viewMatrix;
+        const auto viewProjectionMatrix = projectionMatrix * viewMatrix;
 
         encoder->setVertexBytes(
             &viewProjectionMatrix,
@@ -178,6 +199,53 @@ namespace Rendering::Metal
 
         auto rce = CommandEncoder(encoder);
 
+
+        // build pso -> vector<renderables> data structure
+        for (int i = 0; i < 5; i++)
+        {
+            // psoMap
+            auto psoMap = std::unordered_map<std::string, std::vector<std::shared_ptr<IRenderable>>>();
+            // fill map
+            for (const auto& renderable : _renderables[i] | std::views::values)
+            {
+                auto psoName = renderable->_pso->name;
+                if (psoMap.contains(psoName))
+                {
+                    psoMap.at(psoName).push_back(renderable);
+                } else
+                {
+                    psoMap.insert({psoName, std::vector<std::shared_ptr<IRenderable>>()});
+                    psoMap.at(psoName).push_back(renderable);
+                }
+            }
+            // render renderables
+            for (auto [psoName, renderables] : psoMap)
+            {
+                rce.bind(_pipelineStateObjects.at(psoName).get());
+                // set pso materials
+                for (int j = 0; j < _materialInfos[psoName].size(); j++)
+                {
+                    const auto& materialInfo = _materialInfos[psoName][j];
+                    const auto& material = _materials[psoName][j];
+                    auto materialBuffer = NS::TransferPtr(encoder->device()->newBuffer(material.data(), material.size(), MTL::ResourceStorageModeShared));
+                    if (materialInfo.stage == MaterialStage::Vertex)
+                    {
+                        encoder->setVertexBuffer(materialBuffer.get(), 0, materialInfo.bufferIndex);
+                    }
+                    else
+                    {
+                        encoder->setFragmentBuffer(materialBuffer.get(), 0, materialInfo.bufferIndex);
+                    }
+                }
+                for (const auto & renderable : renderables)
+                {
+                    renderable->render(&rce, viewProjectionMatrix);
+                }
+            }
+        }
+
+
+        /*
         // render the renderables
         //std::cout << "Rendering " << _renderables.size() << " renderables." << std::endl;
         for (const auto& renderable : _renderables[static_cast<int>(RenderLayer::BACKGROUND)] | std::views::values)
@@ -201,6 +269,7 @@ namespace Rendering::Metal
         {
             renderable->render(&rce, viewProjectionMatrix);
         }
+        */
 
 
         try {
@@ -228,6 +297,8 @@ namespace Rendering::Metal
         std::cout << "SDL_DestroyRenderer call ended" << std::endl;
     }
 
+
+    /*
     glm::mat4x4 Renderer::getProjectionMatrix() const
     {
         return glm::perspective(
@@ -236,6 +307,6 @@ namespace Rendering::Metal
             0.1f,
             1000.0f);
     }
-
+    */
 }
 

@@ -21,10 +21,7 @@ namespace Rendering
         {
             try
             {
-                _pipelineStateObjects.emplace(
-                    psoConfig.name,
-                    _psoFactory->create(psoConfig)
-                );
+                loadPSO(psoConfig);
             } catch (const std::exception& e)
             {
                 std::cerr << "Error creating PSO with name " << psoConfig.name << ": " << e.what() << std::endl;
@@ -137,7 +134,32 @@ namespace Rendering
             config.name,
             _psoFactory->create(config)
         );
+        // create materials
+        for (const auto& materialInfo : config.materials)
+        {
+            if (materialInfo.frequency == MaterialFrequency::PerFrame)
+            {
+                _materialInfos[config.name].emplace_back(materialInfo);
+                _materials[config.name].emplace_back(getDefaultBytes(materialInfo.type));
+            }
+        }
     }
+
+    void IRenderer::setMaterial(const std::string& name, const std::vector<std::byte>& materialBytes, MaterialType type)
+    {
+        if (_materials.contains(name))
+        {
+            for (int i = 0; i < _materials.at(name).size(); i++)
+            {
+                if (_materialInfos[name][i].type == type)
+                {
+                    _materials[name][i] = materialBytes;
+                    return;
+                }
+            }
+        }
+    }
+
 
     void IRenderer::setDirectionalLight(const DirectionalLight& light, int index)
     {
