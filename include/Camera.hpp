@@ -15,11 +15,19 @@
 class Camera
 {
 public:
-    Camera() : position(0.0f, 0.0f, 0.0f), orientation(1.0f, 0.0f, 0.0f, 0.0f) {}
+    Camera() :
+    position(0.0f, 0.0f, 0.0f),
+    orientation(1.0f, 0.0f, 0.0f, 0.0f),
+    fov(60.0f),
+    nearPlane(0.1f),
+    farPlane(1000.0f) {}
     virtual ~Camera() = default;
 
     glm::vec3 position;
     glm::quat orientation;
+    float fov;
+    float nearPlane;
+    float farPlane;
 
     [[nodiscard]] virtual glm::mat4x4 getViewMatrix() const
     {
