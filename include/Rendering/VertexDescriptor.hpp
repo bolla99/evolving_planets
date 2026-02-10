@@ -34,12 +34,12 @@ namespace Rendering
          * Each buffer[i] can contain more than one attribute;
          * if so, it means that the data of the attributes is
          * interleaved into a single buffer.
-         * Eeach attribute has a name, a type and an index
+         * Each attribute has a name, a type and an index
         */
         std::vector<std::vector<VertexAttribute>> buffers; // each buffer contains a list of attributes
 
-        bool isCompatibleWith(const VertexDescriptor& other) const;
-        bool validateVertexDescriptor() const;
+        [[nodiscard]] bool isCompatibleWith(const VertexDescriptor& other) const;
+        [[nodiscard]] bool validateVertexDescriptor() const;
     };
 
     extern const std::unordered_map<std::string, const VertexDescriptor> G_getVertexDescriptors();

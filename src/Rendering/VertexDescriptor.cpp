@@ -15,7 +15,7 @@ namespace Rendering
     const std::unordered_map<std::string, const VertexDescriptor> G_getVertexDescriptors() {
         static const  std::unordered_map<std::string, const VertexDescriptor> vertexDescriptors = {
             std::make_pair<std::string, const VertexDescriptor>(
-                "triangle_pso",
+                "triangle_pso", // {position, color} non interleaved
                 VertexDescriptor{
                     {
                         {
@@ -28,7 +28,7 @@ namespace Rendering
                 }
             ),
             std::make_pair<std::string, const VertexDescriptor>(
-                "PC",
+                "PC", // {position, color} non interleaved
                 VertexDescriptor{
                 {
                     {
@@ -41,7 +41,7 @@ namespace Rendering
             }
         ),
             std::make_pair<std::string, const VertexDescriptor>(
-                "PCN",
+                "PCN", // {position, color, normal } non interleaved
                 VertexDescriptor{
                 {
                     {
@@ -57,7 +57,7 @@ namespace Rendering
             }
         ),
             std::make_pair<std::string, const VertexDescriptor>(
-                "PCNUV",
+                "PCNUV", // { position, color, normal, uv } non interleaved
                 VertexDescriptor{
                 {
                     {
@@ -76,7 +76,7 @@ namespace Rendering
             }
         ),
             std::make_pair<std::string, const VertexDescriptor>(
-                "PUV",
+                "PUV", // { position, uv } non interleaved
                 VertexDescriptor{
                 {
                     {
@@ -126,14 +126,17 @@ namespace Rendering
     bool VertexDescriptor::validateVertexDescriptor() const
     {
         auto indexes = std::unordered_set<int>();
+        // loop through buffers
         for (const auto& buffer : buffers)
         {
+            // loop through attributes
             for (const auto& attribute : buffer)
             {
                 if (indexes.contains(attribute.attributeIndex))
                 {
                     return false; // duplicate attribute index
                 }
+                // insert attribute indexes
                 indexes.insert(attribute.attributeIndex);
             }
         }
