@@ -2,7 +2,7 @@
 // Created by Giovanni Bollati on 29/06/25.
 //
 #include <Rendering/UI/UIRenderer.hpp>
-
+#include <Mesh.hpp>
 #include "glm/gtc/type_ptr.hpp"
 
 namespace Rendering::UI
@@ -19,10 +19,9 @@ namespace Rendering::UI
         };
 
         auto dragQuad = Mesh::quad(
-            posDragQuad,
-            _style.dragAreaSize,
-            _style.dragAreaSize,
-            _style.dragAreaColor.data(),
+            glm::vec4(posDragQuad[0], posDragQuad[1], _style.dragAreaSize, _style.dragAreaSize),
+            posDragQuad[2],
+            glm::vec4(_style.dragAreaColor[0], _style.dragAreaColor[1], _style.dragAreaColor[2], 1.0f),
             1.0f, 1.0f
         );
         renderableIDs.push_back(
@@ -39,10 +38,9 @@ namespace Rendering::UI
         };
 
         auto header = Mesh::quad(
-            headerPos,
-            window.width(),
-            _style.headerSize,
-            _style.headerColor.data(),
+            glm::vec4(headerPos[0], headerPos[1], static_cast<float>(window.width()), _style.headerSize),
+            headerPos[2],
+            glm::vec4(_style.headerColor[0], _style.headerColor[1], _style.headerColor[2], 1.0f),
             1.0f, 1.0f
         );
         renderableIDs.push_back(
@@ -59,10 +57,9 @@ namespace Rendering::UI
         };
 
         auto borderDown = Mesh::quad(
-            borderDownPos,
-            window.width(),
-            _style.borderSize,
-            _style.borderColor.data(),
+            glm::vec4(borderDownPos[0], borderDownPos[1], static_cast<float>(window.width()), _style.borderSize),
+            borderDownPos[2],
+            glm::vec4(_style.borderColor[0], _style.borderColor[1], _style.borderColor[2], 1.0f),
             1.0f, 1.0f
         );
         renderableIDs.push_back(
@@ -79,10 +76,9 @@ namespace Rendering::UI
         };
 
         auto borderLeft = Mesh::quad(
-            borderLeftPos,
-            _style.borderSize,
-            window.height(),
-            _style.borderColor.data(),
+            glm::vec4(borderLeftPos[0], borderLeftPos[1], _style.borderSize, static_cast<float>(window.height())),
+            borderLeftPos[2],
+            glm::vec4(_style.borderColor[0], _style.borderColor[1], _style.borderColor[2], 1.0f),
             1.0f, 1.0f
         );
         renderableIDs.push_back(
@@ -99,10 +95,9 @@ namespace Rendering::UI
         };
 
         auto borderRight = Mesh::quad(
-            borderRightPos,
-            _style.borderSize,
-            window.height(),
-            _style.borderColor.data(),
+            glm::vec4(borderRightPos[0], borderRightPos[1], _style.borderSize, static_cast<float>(window.height())),
+            borderRightPos[2],
+            glm::vec4(_style.borderColor[0], _style.borderColor[1], _style.borderColor[2], 1.0f),
             1.0f, 1.0f
         );
         renderableIDs.push_back(
@@ -119,10 +114,9 @@ namespace Rendering::UI
         };
 
         auto background = Mesh::quad(
-            pos,
-            static_cast<float>(window.width()),
-            static_cast<float>(window.height()),
-            _style.color.data(),
+            glm::vec4(pos[0], pos[1], static_cast<float>(window.width()), static_cast<float>(window.height())),
+            pos[2],
+            glm::vec4(_style.color[0], _style.color[1], _style.color[2], 1.0f),
             1.0f, 1.0f
         );
         renderableIDs.push_back(
@@ -136,21 +130,17 @@ namespace Rendering::UI
 
     std::vector<uint64_t> UIRenderer::submitLabel(const UILabel& label) const
     {
-        float pos[3] = {
-            static_cast<float>(label.x()),
-            static_cast<float>(label.y()),
-            0.001f // Depth for the label
-        };
+        // Position is in pixels (top-left origin) and depth is used to order.
+        const float depth = 0.001f;
 
-        // create a quad that has height and width of the text
-        // and position of the label, which is decided by the UIManager
         auto labelQuad = Mesh::quad(
-            pos,
-            static_cast<float>(label.width()),
-            static_cast<float>(label.height()),
-            glm::value_ptr(UILabel::defaultStyle().color),
-            label.uvX(), label.uvY()
+            glm::vec4(static_cast<float>(label.x()), static_cast<float>(label.y()), static_cast<float>(label.width()), static_cast<float>(label.height())),
+            depth,
+            UILabel::defaultStyle().color,
+            label.uvX(),
+            label.uvY()
         );
+
         std::vector<uint64_t> renderableIDs;
         renderableIDs.push_back(
             _renderer->addRenderable(

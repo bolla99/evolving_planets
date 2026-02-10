@@ -76,11 +76,11 @@ namespace Rendering
                 "vertexVCPHONGWithTint",
                 "fragmentVCPHONG",
                 Triangle,
-                Wireframe,
+                Solid,
                 Back,
                 Enabled,
                 G_getVertexDescriptors().at("PCN"),
-                {{VCPHONG, Vertex, PerObject, 27}}
+                {{TintType, Vertex, PerObject, 27}}
             }
         },
         std::pair<std::string, const PSOConfig>{
@@ -95,7 +95,10 @@ namespace Rendering
                 Back,
                 Enabled,
                 G_getVertexDescriptors().at("PC"),
-                {}
+                {
+                    {RectType, Vertex, PerObject, 2},
+                    {ViewportSizeType, Vertex, PerFrame, 3}
+                }
             },
         },
         std::pair<std::string, const PSOConfig>{
@@ -123,7 +126,7 @@ namespace Rendering
                 Triangle,
                 Solid,
                 Back,
-                Disabled,
+                Enabled,
                 G_getVertexDescriptors().at("PUV"),
                 {}
             },
