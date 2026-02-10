@@ -27,7 +27,7 @@ public:
     virtual void init() = 0;
     virtual void run() = 0;
 
-    static std::array<glm::vec3, 2> mouseRay(glm::mat4 viewMatrix, SDL_Window* window, Rendering::IRenderer* renderer);
+    static std::array<glm::vec3, 2> mouseRay(glm::mat4 viewMatrix, glm::mat4 projectionMatrix, SDL_Window* window, Rendering::IRenderer* renderer);
 
 
 protected:
