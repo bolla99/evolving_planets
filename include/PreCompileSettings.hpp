@@ -7,11 +7,11 @@
 
 
 // 0: evolving planets; 1: rtgp app
-#define APP 1
+#define APP 0
 
 // evolving planets macros
-#define DEBUG_BALL 1
-#define SHOW_BVH 1
+#define DEBUG_BALL 0
+#define SHOW_BVH 0
 
 // rtgp app macros
 #define COMPONENTS_UI 1

@@ -5,7 +5,6 @@
 #include <SDL.h>
 #include <RTGPApp.hpp>
 
-#include "AssimpMeshLoader.hpp"
 #include "imgui.h"
 #include "imgui_impl_sdl2.h"
 #include "../include/Engine/Pool.hpp"
@@ -16,6 +15,9 @@
 #include "glm/gtc/type_ptr.hpp"
 #include "../include/Engine/Components.hpp"
 #include <Engine/Systems.hpp>
+
+#include "Engine/SystemsManager.hpp"
+#include "Engine/UI/ComponentsInspector.hpp"
 
 void RTGPApp::init()
 {
@@ -33,13 +35,43 @@ void RTGPApp::init()
 
 void RTGPApp::run()
 {
-    // CREATE WORLD
+    // CREATE WORLD AND CONTEXT
     auto world = World();
+    auto ctx = Context{_renderer.get(), _window, &_assetManager};
+    auto inspector = ComponentsInspector::factory();
+
+    // SYSTEMS MANAGER
+    auto systemManager = SystemsManager();
+    systemManager.addSystem<MeshLoadingSystem>();
+    systemManager.addSystem<RenderRegistrationSystem>();
+    systemManager.addSystem<TransformSystem>();
+    systemManager.addSystem<MouseRaySystem>();
+    systemManager.addSystem<UpdateLightsWithTransformSystem>();
+    systemManager.addSystem<SetLightsSystem>();
+    systemManager.addSystem<MouseIntersectionSystem>();
+    systemManager.addSystem<UpdateMaterialTintSystem>();
+    systemManager.addSystem<RendererUpdateSystem>();
+    systemManager.addSystem<RectMaterialComponentSystem>();
+    systemManager.addSystem<ViewportSizeMaterialSystem>();
+
+    // ENTITIES
+    auto viewport = world.createEntity("viewport");
+    world.addComponent<ViewportComponent>(viewport, ViewportComponent());
+
+    // background
+    auto background = world.createEntity("background");
+    world.addComponent<RectMaterialComponent>(background, RectMaterialComponent(RectMaterial({0.0f, 0.0f, 800.0f, 600.0f})));
+    auto quad = Mesh::quad({0.0f, 0.0f, 1.0f, 1.0f}, 0.9f, {1.0f, 0.0f, 0.0f, 1.0f}, 1.0f, 1.0f);
+    world.addComponent<MeshComponent>(background, MeshComponent(quad, "quad"));
+    world.addComponent<RenderConfigComponent>(background, {"UI", Rendering::RenderLayer::BACKGROUND});
+    world.addComponent<ViewportSizeMaterialComponent>(background, ViewportSizeMaterialComponent());
 
     // LIGHT ENTITIES
     auto pointLight = world.createEntity("point light");
     world.addComponent(pointLight, PointLightComponent({{0.0f, 0.0f, 2.0f, 1.0f}, {0.5f, 0.1f, 0.1f, 1.0f}}));
-    world.addComponent(pointLight, Transform({.position = {0.0f, 0.0f, 2.0f}}));
+    world.addComponent(pointLight, Transform({.position = {0.0f, 0.0f, 2.0f}, .scale = {0.1f, 0.1f, 0.1f}, }));
+    world.addComponent<MeshRequestComponent>(pointLight, {Apple::resourcePath("ico.fbx")});
+    world.addComponent<RenderConfigComponent>(pointLight, {"VCPHONG_WITH_TINT", Rendering::RenderLayer::OPAQUE});
 
     auto directionalLight = world.createEntity("sun");
     world.addComponent(directionalLight, DirectionalLightComponent());
@@ -58,29 +90,16 @@ void RTGPApp::run()
 
     auto cameraSpeed = 100.0f;
 
-    // create mesh loader
-    std::unique_ptr<IMeshLoader> meshLoader = std::make_unique<AssimpMeshLoader>();
-
     // selected entity
     uint64_t selectedEntity = 0;
 
     // MONKEY ENTITY
     auto monkey = world.createEntity("monkey");
-    world.addComponent<MeshComponent>(monkey, {meshLoader->loadMesh(Apple::resourcePath("monkey.obj"))});
+    world.addComponent<MeshRequestComponent>(monkey, {Apple::resourcePath("monkey.obj")});
     world.addComponent<RenderConfigComponent>(monkey, {"VCPHONG_WITH_TINT", Rendering::RenderLayer::OPAQUE});
     world.addComponent<Transform>(monkey, Transform());
     world.addComponent<MouseRayIntersectionComponent>(monkey, MouseRayIntersectionComponent());
-
-    // debug ball
-    auto debugBall = world.createEntity("debug ball");
-    world.addComponent<Transform>(debugBall, Transform());
-    world.getComponent<Transform>(debugBall).scale = {0.05f, 0.05f, 0.05f};
-    auto debugBallMesh = meshLoader->loadMesh(Apple::resourcePath("ico.fbx"));
-    world.addComponent<MeshComponent>(debugBall, {debugBallMesh});
-    auto debugBallRenderableID = _renderer->addRenderable(
-        *debugBallMesh, Rendering::psoConfigs.at("VCPHONG"), {}, Rendering::RenderLayer::OPAQUE
-        );
-    world.addComponent<RenderableComponent>(debugBall, {debugBallRenderableID});
+    world.addComponent<TintMaterialComponent>(monkey, TintMaterialComponent());
 
     SDL_Event event;
     auto running = true;
@@ -151,7 +170,7 @@ void RTGPApp::run()
           ///////////////////////////////////////////////////////////////////////////////
          /////////////////////////////////// UI // /////////////////////////////////////
         ///////////////////////////////////////////////////////////////////////////////
-        _renderer->setDebugUICallback([this, &world, monkey, &camera, &debugBall, &selectedEntity, leftMouseButtonDown]
+        _renderer->setDebugUICallback([this, &world, &selectedEntity, &ctx, inspector]
         {
             ImGui::Begin("Entities");
             ImGui::Text("Selected Entity: %lu", selectedEntity);
@@ -169,67 +188,25 @@ void RTGPApp::run()
             }
             ImGui::End();
 
+
             // inspector
             ImGui::Begin("Inspector");
             if (selectedEntity != 0)
             {
                 auto label = "Entity " + std::to_string(selectedEntity) + ": " + world.getComponent<NameComponent>(selectedEntity).name;
                 ImGui::Text(label.c_str());
-                world.entityInspector(selectedEntity);
+                inspector.entityInspector(world, ctx, selectedEntity);
             }
             ImGui::End();
-
-            /*
-            ImGui::Begin("Main");
-
-            // get monkey math
-            if (world.hasComponent<RenderableComponent>(monkey))
-            {
-                auto monkeyMat = _renderer->getMaterial<MatVCPHONG>(world.getComponent<RenderableComponent>(monkey).id);
-                static glm::vec4 monkeyTint = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
-                ImGui::ColorEdit4("Monkey Tint", glm::value_ptr((monkeyTint)));
-                monkeyMat->data.addTint = 1;
-                monkeyMat->data.tint = monkeyTint;
-            }
-
-            auto mouseIntersectable = world.query<MouseRayIntersectionComponent>();
-            if (leftMouseButtonDown) selectedEntity = 0;
-            for (auto e : mouseIntersectable)
-            {
-                if (world.getComponent<MouseRayIntersectionComponent>(e).intersected)
-                {
-                    auto intersection = world.getComponent<MouseRayIntersectionComponent>(e).intersection;
-                    world.getComponent<Transform>(debugBall).position = intersection;
-                    if (leftMouseButtonDown and e != selectedEntity)
-                        selectedEntity = e;
-                }
-            }
-            world.getComponent<Transform>(monkey).ui();
-            ImGui::End();
-            */
-
-
         });
 
           ///////////////////////////////////////////////////////////////////////////////
          /////////////////////////////////// SYSTEMS ///////////////////////////////////
         ///////////////////////////////////////////////////////////////////////////////
-        auto ctx = Context{_renderer.get(), _window};
-        // apply transform to renderable entities
-        TransformSystem().update(world, ctx, deltaTime);
-        // set mouse ray according to camera
-        MouseRaySystem().update(world, ctx, deltaTime);
-        // pick renderable entities and register them to the renderer
-        RenderRegistrationSystem().update(world, ctx, deltaTime);
-        // update lights according to transform
-        UpdateLightsWithTransformSystem().update(world, ctx, deltaTime);
-        // send lights to rendering system
-        SetLightsSystem().update(world, ctx, deltaTime);
-        // register intersections with the mouse ray
-        MouseIntersectionSystem().update(world, ctx, deltaTime);
+        systemManager.update(world, ctx, deltaTime);
 
-        // RENDERING UPDATE
-        _renderer->update(camera.getViewMatrix());
+        //std::cout << "FPS: " << 1.0f / deltaTime << std::endl;
+
     }
     SDL_DestroyWindow(_window);
     std::cout << "Exiting from RTGPApp::run()" << std::endl;
