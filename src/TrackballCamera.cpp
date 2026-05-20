@@ -20,3 +20,12 @@ glm::mat4x4 TrackballCamera::getViewMatrix() const
     auto rotate_y = glm::rotate(glm::mat4(1.0f), glm::radians(h), glm::vec3(0.0f, 1.0f, 0.0f));
     return glm::inverse(rotate_y * rotate_x * translate);
 }
+
+glm::vec3 TrackballCamera::getPosition() const
+{
+    auto translate = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, distance));
+    auto rotate_x = glm::rotate(glm::mat4(1.0f), glm::radians(v), glm::vec3(1.0f, 0.0f, 0.0f));
+    auto rotate_y = glm::rotate(glm::mat4(1.0f), glm::radians(h), glm::vec3(0.0f, 1.0f, 0.0f));
+    auto matrix = rotate_y * rotate_x * translate;
+    return glm::vec3(matrix[3]);
+}

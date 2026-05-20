@@ -19,7 +19,7 @@ public:
     position(0.0f, 0.0f, 0.0f),
     orientation(1.0f, 0.0f, 0.0f, 0.0f),
     fov(60.0f),
-    nearPlane(0.1f),
+    nearPlane(0.8f),
     farPlane(1000.0f) {}
     virtual ~Camera() = default;
 
@@ -35,6 +35,8 @@ public:
             glm::translate(glm::mat4(1.0f), position) * glm::toMat4(glm::normalize(orientation))
         );
     }
+
+    [[nodiscard]]  virtual glm::vec3 getPosition() const { return position; }
 
     void lookAt(glm::vec3 target, glm::vec3 upDirection = glm::vec3(0.0f, 1.0f, 0.0f))
     {

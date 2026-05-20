@@ -17,6 +17,8 @@ public:
     void zoom(float amount) override;
 
     [[nodiscard]] glm::mat4x4 getViewMatrix() const override;
+    [[nodiscard]] glm::vec3 getPosition() const override;
+
 
 private:
     float h, v, distance;
