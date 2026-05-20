@@ -65,9 +65,10 @@ public:
     }
 
     template <typename T>
-    void addComponent(uint64_t entityID, T component)
+    T& addComponent(uint64_t entityID, T component)
     {
         getOrCreateStorage<T>().add(entityID, component);
+        return getOrCreateStorage<T>().get(entityID);
     }
 
     template <typename T>

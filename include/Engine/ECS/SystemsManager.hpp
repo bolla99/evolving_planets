@@ -20,6 +20,7 @@ public:
     {
         auto id = _pool.newID();
         _systems.insert({id, std::make_shared<T>()});
+        _order.push_back(id);
         return id;
     }
 
@@ -31,9 +32,14 @@ public:
         {
             if (typeid(*it->second) == typeid(T))
             {
+                // destroy id
                 _pool.destroyID(it->first);
+                // remove from system map
                 it = _systems.erase(it);
-            } else
+                // remove from order
+                _order.erase(std::ranges::find(_order, it->first));
+            }
+            else
             {
                 ++it;
             }
@@ -44,15 +50,22 @@ public:
     {
         _pool.destroyID(id);
         _systems.erase(id);
+        _order.erase(std::ranges::find(_order, id));
     }
 
     void update(World& world, const Context& ctx, float dt) override
     {
-        for (const auto& system : _systems | std::views::values) system->update(world, ctx, dt);
+        for (auto& id : _order)
+        {
+            _systems[id]->update(world, ctx, dt);
+        }
     }
+
+    std::string name() const override { return "SystemsManager"; }
 private:
     Pool _pool;
     std::unordered_map<uint64_t, std::shared_ptr<ISystem>> _systems;
+    std::vector<uint64_t> _order;
 };
 
 #endif //EVOLVING_PLANETS_SYSTEMSMANAGER_HPP
