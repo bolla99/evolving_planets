@@ -10,6 +10,7 @@
 #include "Rendering/UI/UIRenderer.hpp"
 
 
+/*
 namespace Rendering::UI
 {
     std::vector<uint64_t> UIWindow::submitToRenderer(UIRenderer* renderer) const
@@ -19,3 +20,4 @@ namespace Rendering::UI
 
     UIWindowStyle UIWindow::style = UIWindowStyle::defaultStyle();
 }
+*/

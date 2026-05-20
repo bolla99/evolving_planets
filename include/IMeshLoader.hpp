@@ -11,10 +11,10 @@ class IMeshLoader
 {
 public:
     virtual ~IMeshLoader() = default;
-    [[nodiscard]] virtual std::shared_ptr<Mesh> loadMesh(
+    [[nodiscard]] virtual std::shared_ptr<Geometry::Mesh> loadMesh(
         const std::string& path) const = 0;
 
-    virtual void saveMesh(const std::string& path, std::shared_ptr<Mesh> mesh) const = 0;
+    virtual void saveMesh(const std::string& path, std::shared_ptr<Geometry::Mesh> mesh) const = 0;
 };
 
 #endif //IMESHLOADER_HPP

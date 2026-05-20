@@ -17,13 +17,11 @@
 class AssimpMeshLoader : public IMeshLoader
 {
 public:
-    std::shared_ptr<Mesh> loadMesh(const std::string& path) const override
+    std::shared_ptr<Geometry::Mesh> loadMesh(const std::string& path) const override
     {
         Assimp::Importer importer;
         const aiScene* scene = importer.ReadFile(
-            path,
-            aiProcess_Triangulate | // Ensure all meshes are triangulated
-            aiProcess_JoinIdenticalVertices // Join identical vertices
+            path, 0
             );
         if (!scene)
         {
@@ -71,7 +69,7 @@ public:
             vertexData.emplace_back(numVertices * sizeof(float) * 4);
             for (int j = 0; j < numVertices; ++j)
             {
-                auto color = Mesh::noVertexColor();
+                auto color = Geometry::Mesh::noVertexColor();
                 std::memcpy(vertexData[i].data() + j * sizeof(float) * 4, &color, sizeof(float) * 4);
             }
             ++i;
@@ -145,7 +143,7 @@ public:
             SDL_Log("Mesh has no textures.");
         }
 
-        return std::make_shared<Mesh>(
+        return std::make_shared<Geometry::Mesh>(
             numVertices,
             mesh->mNumFaces, // assuming triangles
             vertexAttributeNames,
@@ -155,7 +153,7 @@ public:
         );
     }
 
-    void saveMesh(const std::string& path, std::shared_ptr<Mesh> mesh) const override
+    void saveMesh(const std::string& path, std::shared_ptr<Geometry::Mesh> mesh) const override
     {
         Assimp::Exporter exporter;
 

@@ -5,6 +5,7 @@
 #include <Mesh.hpp>
 #include "glm/gtc/type_ptr.hpp"
 
+/*
 namespace Rendering::UI
 {
     std::vector<uint64_t> UIRenderer::submitWindow(const UIWindow& window) const
@@ -153,3 +154,4 @@ namespace Rendering::UI
         return renderableIDs;
     }
 }
+*/

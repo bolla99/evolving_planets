@@ -14,7 +14,7 @@ namespace GravityAdapter
     class GravityComputer
     {
     public:
-        explicit GravityComputer(const Mesh& mesh, int tubesResolution = 64);
+        explicit GravityComputer(const Geometry::Mesh& mesh, int tubesResolution = 64);
 
         std::vector<glm::vec3> getTubes();
         

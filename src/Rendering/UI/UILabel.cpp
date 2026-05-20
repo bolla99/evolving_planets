@@ -6,7 +6,7 @@
 
 #include <vector>
 #include <Rendering/UI/UIRenderer.hpp>
-
+/*
 namespace Rendering::UI
 {
     UILabel::UILabel(std::string text, int x, int y)
@@ -27,4 +27,5 @@ namespace Rendering::UI
         return renderer->submitLabel(*this);
     }
 }
+*/
 

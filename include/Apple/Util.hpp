@@ -5,7 +5,7 @@
 #ifndef UTIL_HPP
 #define UTIL_HPP
 
-#include <Foundation/Foundation.hpp>>
+#include <Foundation/Foundation.hpp>
 #include <string>
 
 namespace Apple

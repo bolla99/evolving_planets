@@ -2,7 +2,7 @@
 // Created by Giovanni Bollati on 25/06/25.
 //
 
-
+/*
 #include "Rendering/UI/UIManager.hpp"
 
 #include <vector>
@@ -168,3 +168,4 @@ namespace Rendering::UI
         return true;
     }
 }
+*/

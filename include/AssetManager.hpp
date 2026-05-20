@@ -18,9 +18,9 @@ public:
     {
         assert(_meshLoader && "mesh loader null during AssetManager construction");
     }
-    std::shared_ptr<Mesh> getMesh(const std::string& path)
+    std::shared_ptr<Geometry::Mesh> getMesh(const std::string& path)
     {
-        std::shared_ptr<Mesh> mesh;
+        std::shared_ptr<Geometry::Mesh> mesh;
         if (_failedMeshes.contains(path))
         {
             std::cout << "calling on failed" << std::endl;
@@ -63,7 +63,7 @@ public:
 
 private:
     std::shared_ptr<IMeshLoader> _meshLoader;
-    std::unordered_map<std::string, std::weak_ptr<Mesh>> _meshes;
+    std::unordered_map<std::string, std::weak_ptr<Geometry::Mesh>> _meshes;
     std::unordered_set<std::string> _failedMeshes;
 };
 

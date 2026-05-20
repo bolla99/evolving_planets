@@ -257,7 +257,7 @@ float PlanetGA::fitness(const Planet& individual)
     auto positions = individual.positions(pairs);
     auto normals = individual.normals(pairs);
     // compute gravity values
-    auto mesh = Mesh::fromPlanet(individual, glm::vec4(1.0f, 0.0f, 1.0f, 1.0f), step);
+    auto mesh = Geometry::Mesh::fromPlanet(individual, glm::vec4(1.0f, 0.0f, 1.0f, 1.0f), step);
     auto gc = GravityAdapter::GravityComputer(*mesh, _gravityComputationTubesResolution);
     auto fitnessValue = 0.0f;
     auto d = 0.0f;
