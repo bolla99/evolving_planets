@@ -27,7 +27,7 @@ set(CMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "")
 set(CMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED NO)
 
 
-file(GLOB_RECURSE SOURCE_FILES src/*.cpp)
+file(GLOB_RECURSE SOURCE_FILES src/*.cpp src/*.mm)
 file(GLOB_RECURSE HEADER_FILES include/*.hpp)
 file(GLOB_RECURSE RESOURCES resources/*)
 set_source_files_properties(${RESOURCES} PROPERTIES HEADER_FILE_ONLY TRUE)
@@ -70,6 +70,17 @@ add_subdirectory(assimp)
 add_subdirectory(glm)
 #find_package(glm CONFIG REQUIRED)
 
+# BULLET
+set(BUILD_CPU_DEMOS OFF CACHE BOOL "" FORCE)
+set(BUILD_OPENGL3_DEMOS OFF CACHE BOOL "" FORCE)
+set(BUILD_BULLET2_DEMOS OFF CACHE BOOL "" FORCE)
+set(BUILD_EXTRAS OFF CACHE BOOL "" FORCE)
+set(BUILD_UNIT_TESTS OFF CACHE BOOL "" FORCE)
+set(BUILD_BULLET3 OFF CACHE BOOL "" FORCE)
+set(BUILD_ENET OFF CACHE BOOL "" FORCE)
+set(BUILD_CLSOCKET OFF CACHE BOOL "" FORCE)
+set(USE_GRAPHICAL_BENCHMARK OFF CACHE BOOL "" FORCE)
+add_subdirectory(bullet3)
 
 
 add_subdirectory(imgui)
@@ -155,9 +166,13 @@ target_link_libraries(main PRIVATE
         bezier
         gravity
         genetic
+        BulletDynamics
+        BulletCollision
+        LinearMath
 )
 
 target_include_directories(main PRIVATE ${GLM_INCLUDE_DIR})
+target_include_directories(main PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/bullet3/src")
 
 set(SDL2_DYLIB_PATH "/Library/Frameworks/SDL2.framework/Versions/A/SDL2")
 set(SDL2_ttf_DYLIB_PATH "/Library/Frameworks/SDL2_ttf.framework/Versions/A/SDL2_ttf")
@@ -235,3 +250,46 @@ source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/resources"
         FILES ${RESOURCES}
 )
+
+# 1. Configurazione Target
+set_target_properties(main PROPERTIES
+        MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_BUNDLE_NAME "EvolvingPlanets"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "com.tuonome.evolvingplanets"
+)
+
+# Evitiamo che file non binari finiscano in MacOS
+install(TARGETS main
+        BUNDLE DESTINATION .
+        COMPONENT Application)
+
+install(CODE "
+  set(APP_PATH \"\${CMAKE_INSTALL_PREFIX}/main.app\")
+
+  # Forza install_name_tool di sistema (evita quello di Anaconda)
+  set(CMAKE_INSTALL_NAME_TOOL \"/usr/bin/install_name_tool\")
+  set(BU_CHMOD_BUNDLE_ITEMS TRUE)
+
+  # 1. Fixup delle librerie
+  include(BundleUtilities)
+  fixup_bundle(\"\${APP_PATH}\" \"\" \"/Library/Frameworks;/opt/homebrew/lib\")
+
+  # 2. Pulizia drastica dei 'detritus' e file indesiderati
+  execute_process(COMMAND xattr -cr \"\${APP_PATH}\")
+  execute_process(COMMAND find \"\${APP_PATH}\" -name \"*.ini\" -delete)
+  execute_process(COMMAND find \"\${APP_PATH}\" -name \".DS_Store\" -delete)
+
+  # 3. Firma 'Atomica' (File per file)
+  message(STATUS \"--- Firma finale in corso ---\")
+  execute_process(
+    COMMAND find \"\${APP_PATH}\" -type f \( -perm +111 -or -name \"*.dylib\" -or -path \"*/Frameworks/*\" \)
+    -exec codesign --force --sign - {} \;
+  )
+  # Firma il bundle stesso
+  execute_process(COMMAND codesign --force --sign - \"\${APP_PATH}\")
+" COMPONENT Application)
+
+# 4. CPack
+set(CPACK_GENERATOR "DragNDrop")
+set(CPACK_MONOLITHIC_INSTALL ON)
+include(CPack)
