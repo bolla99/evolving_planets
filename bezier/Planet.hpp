@@ -80,6 +80,8 @@ public:
 
     [[nodiscard]] int degreeU() const { return _degreeU; }
     [[nodiscard]] int degreeV() const { return _degreeV; }
+    [[nodiscard]] const std::vector<int>& knotsU() const { return _knotsU; }
+    [[nodiscard]] const std::vector<int>& knotsV() const { return _knotsV; }
 
     [[nodiscard]] std::vector<glm::vec3> normalSticks(float length, float step = 0.01f) const;
     [[nodiscard]] std::vector<glm::vec3> positions(float uStep = 0.01f, float vStep = 0.01f) const;
@@ -134,6 +136,18 @@ public:
     static std::vector<float> minDiversities(const std::vector<std::shared_ptr<Planet>>& planets);
 
     [[nodiscard]] bool isAutointersecating(float step = 0.01f) const;
+
+    [[nodiscard]] std::shared_ptr<Core::Texture> toTexture(size_t width, size_t height) const;
+    [[nodiscard]] std::shared_ptr<Core::Texture> toNormalTexture(size_t width, size_t height) const;
+    [[nodiscard]] std::shared_ptr<Core::Texture> generateRidgedFBMTexture(size_t width, size_t height, int octaves, float scale) const;
+
+    static float minDistance(const std::shared_ptr<Core::Texture>& bsplineTexture, const glm::vec3& point, int resolution = 100);
+
+    static uint32_t calculateLOD(const std::shared_ptr<Core::Texture>& bsplineTexture, 
+                                 const glm::vec3& cameraPos, 
+                                 const glm::mat4& projectionMatrix,
+                                 float planetRadius,
+                                 int resolution = 100);
 
 private:
     int _degreeU = 0;

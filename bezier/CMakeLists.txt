@@ -20,6 +20,6 @@ target_link_libraries(bezier PUBLIC
 cmake_minimum_required(VERSION 3.26)
 
 add_metal_shader_library(BezierShaders
-        STANDARD macos-metal2.4
+        STANDARD metal3.0
         TriangleIntersection.metal
 )

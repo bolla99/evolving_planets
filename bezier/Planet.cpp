@@ -2,6 +2,7 @@
 // Created by Giovanni Bollati on 25/07/25.
 //
 #include "Planet.hpp"
+#include <glm/gtx/norm.hpp>
 
 #include <array>
 #include <random>
@@ -416,16 +417,16 @@ std::shared_ptr<Planet> Planet::sphere(int nParallels, int nMeridians, float rad
             else if (i == nParallels - 3)
             {
                 parallels[i][j] = glm::vec3(
-                radius * 0.1f * sin(1.0 - deltaTheta) * cos(phi),
+                radius * 0.3f * sin(glm::pi<float>() - deltaTheta) * cos(phi),
                 -radius * heightMultiplier,
-                radius * 0.1f * sin(1.0 - deltaTheta) * sin(phi));
+                radius * 0.3f * sin(glm::pi<float>() - deltaTheta) * sin(phi));
             }
             else if (i == nParallels - 2)
             {
                 parallels[i][j] = glm::vec3(
-                radius * 0.03f * sin(1.0 - deltaTheta) * cos(phi),
+                radius * 0.1f * sin(glm::pi<float>() - deltaTheta) * cos(phi),
                 -radius * heightMultiplier,
-                radius * 0.03f * sin(1.0 - deltaTheta) * sin(phi));
+                radius * 0.1f * sin(glm::pi<float>() - deltaTheta) * sin(phi));
             }
             else if (i == nParallels - 1)
             {
@@ -557,7 +558,7 @@ float Planet::fitness(int sampleSize, int tubesResolution) const
     auto positions = this->positions(pairs);
     auto normals = this->normals(pairs);
     // compute gravity values
-    auto mesh = Mesh::fromPlanet(*this, glm::vec4(1.0f, 0.0f, 1.0f, 1.0f), step);
+    auto mesh = Geometry::Mesh::fromPlanet(*this, glm::vec4(1.0f, 0.0f, 1.0f, 1.0f), step);
     auto gc = GravityAdapter::GravityComputer(*mesh, tubesResolution);
     auto fitnessValue = 0.0f;
     auto gravities = gc.getGravitiesGPU(positions);
@@ -822,7 +823,7 @@ bool Planet::isAutointersecating(float step) const {
     }
     NS::UInteger triCount = triangles.size();*/
     //auto mesh = Mesh::fromPlanet(*this, glm::vec4(1.0f, 0.0f, 1.0f, 1.0f), step);
-    auto mesh = Mesh::fromPlanetGPU(*this, glm::vec4(1.0f, 0.0f, 1.0f, 1.0f), step, true);
+    auto mesh = Geometry::Mesh::fromPlanetGPU(*this, glm::vec4(1.0f, 0.0f, 1.0f, 1.0f), step, true);
 
     auto triangles = std::vector<Triangle>();
     std::cout << "mesh setup time: " << SDL_GetTicks64() - meshSetupTime << std::endl;
@@ -1431,6 +1432,189 @@ std::vector<float> Planet::minDiversities(const std::vector<std::shared_ptr<Plan
     auto mins = std::vector<float>();
     for (auto & i : result) mins.push_back(i.first);
     return mins;
+}
+
+std::shared_ptr<Core::Texture> Planet::toTexture(size_t width, size_t height) const {
+    std::vector<uint8_t> data;
+    data.reserve(width * height * sizeof(float) * 4);
+
+    for (size_t y = 0; y < height; ++y) {
+        float v = (float)y / (float)(height - 1);
+        for (size_t x = 0; x < width; ++x) {
+            float u = (float)x / (float)(width);
+            glm::vec3 p = evaluate(u, v);
+            
+            // For poles (v=0 and v=1), the B-spline might have a line of points instead of a single point
+            // because of how the control grid is constructed. 
+            // We should ensure that for v=0 and v=1 the value is consistent.
+            if (y == 0) p = evaluate(0.5f, 0.0f);
+            if (y == height - 1) p = evaluate(0.5f, 1.0f);
+
+            float pixel[4] = {p.x, p.y, p.z, 1.0f};
+            uint8_t* bytes = reinterpret_cast<uint8_t*>(pixel);
+            data.insert(data.end(), bytes, bytes + sizeof(float) * 4);
+        }
+    }
+
+    return std::make_shared<Core::Texture>(
+        data, width, height, Core::RGBA32F, sizeof(float) * 4, Core::BSplineTexture
+    );
+}
+
+float Planet::minDistance(const std::shared_ptr<Core::Texture>& bsplineTexture, const glm::vec3& point, int resolution)
+{
+    float min_dist_sq = std::numeric_limits<float>::max();
+
+    for (int i = 0; i < resolution; ++i) {
+        float u = (float)i / (float)resolution;
+        for (int j = 0; j < resolution; ++j) {
+            float v = (float)j / (float)(resolution - 1);
+
+            glm::vec4 sample = bsplineTexture->sample(u, v);
+            glm::vec3 surfacePoint(sample.x, sample.y, sample.z);
+
+            float dist_sq = glm::distance2(surfacePoint, point);
+            if (dist_sq < min_dist_sq) {
+                min_dist_sq = dist_sq;
+            }
+        }
+    }
+
+    return std::sqrt(min_dist_sq);
+}
+
+uint32_t Planet::calculateLOD(const std::shared_ptr<Core::Texture>& bsplineTexture, 
+                              const glm::vec3& cameraPos, 
+                              const glm::mat4& projectionMatrix,
+                              float planetRadius,
+                              int resolution)
+{
+    float minDist = minDistance(bsplineTexture, cameraPos, resolution);
+    float dist = std::max(minDist, 0.001f);
+
+    // screenRef è projectionMatrix[1][1] (1.0 / tan(fov/2))
+    float screenRef = projectionMatrix[1][1];
+    
+    // Logica equivalente a PlanetShader.metal
+    float projectedSize = (planetRadius / 10.0f * screenRef) / dist;
+
+    float baseLod = std::log2(projectedSize * 32.0f);
+    float normalizedLod = glm::clamp(baseLod / 9.0f, 0.0f, 1.0f);
+
+    // Curva di potenza 1.5 come nello shader
+    float curvedLod = std::pow(normalizedLod, 1.5f);
+
+    // Range 1-9
+    float lodWeight = curvedLod * 9.0f;
+    
+    return static_cast<uint32_t>(glm::clamp(lodWeight, 1.0f, 9.0f));
+}
+
+std::shared_ptr<Core::Texture> Planet::toNormalTexture(size_t width, size_t height) const {
+    std::vector<uint8_t> data;
+    data.reserve(width * height * sizeof(float) * 4);
+
+    for (size_t y = 0; y < height; ++y) {
+        float v = (float)y / (float)(height - 1);
+        for (size_t x = 0; x < width; ++x) {
+            float u = (float)x / (float)(width - 1);
+            glm::vec3 n = glm::normalize(normal(u, v));
+
+            if (y == 0) n = normal(0.5f, 0.0f);
+            if (y == height - 1) n = normal(0.5f, 1.0f);
+
+            float pixel[4] = {n.x, n.y, n.z, 0.0f};
+            uint8_t* bytes = reinterpret_cast<uint8_t*>(pixel);
+            data.insert(data.end(), bytes, bytes + sizeof(float) * 4);
+        }
+    }
+
+    return std::make_shared<Core::Texture>(
+        data, width, height, Core::RGBA32F, sizeof(float) * 4, Core::NormalMap
+    );
+}
+
+static float hash1d(glm::vec3 p) {
+    p = glm::fract(p * glm::vec3(.1031f, .1030f, .0973f));
+    p += glm::dot(p, glm::vec3(p.y, p.z, p.x) + 33.33f);
+    return glm::fract((p.x + p.y) * p.z);
+}
+
+static float smoothNoise(glm::vec3 p) {
+    glm::vec3 i = glm::floor(p);
+    glm::vec3 f = glm::fract(p);
+    f = f * f * (3.0f - 2.0f * f);
+
+    float a = hash1d(i + glm::vec3(0,0,0));
+    float b = hash1d(i + glm::vec3(1,0,0));
+    float c = hash1d(i + glm::vec3(0,1,0));
+    float d = hash1d(i + glm::vec3(1,1,0));
+    float e = hash1d(i + glm::vec3(0,0,1));
+    float g = hash1d(i + glm::vec3(1,0,1));
+    float h = hash1d(i + glm::vec3(0,1,1));
+    float j = hash1d(i + glm::vec3(1,1,1));
+
+    return glm::mix(glm::mix(glm::mix(a, b, f.x), glm::mix(c, d, f.x), f.y),
+                    glm::mix(glm::mix(e, g, f.x), glm::mix(h, j, f.x), f.y), f.z);
+}
+
+static float ridgedFBM(glm::vec3 p, int octaves) {
+    float value = 0.0f;
+    float amplitude = 0.5f;
+    float frequency = 3.0f;
+    float weight = 1.0f;
+
+    for (int i = 0; i < octaves; i++) {
+        float n = smoothNoise(p * frequency);
+        n = 1.0f - std::abs(n);
+        n *= n;
+
+        value += n * amplitude * weight;
+        weight = n;
+
+        frequency *= 2.0f;
+        amplitude *= 0.5f;
+    }
+    return value;
+}
+
+std::shared_ptr<Core::Texture> Planet::generateRidgedFBMTexture(size_t width, size_t height, int octaves, float scale) const {
+    std::vector<uint8_t> data;
+    data.reserve(width * height * sizeof(float) * 4);
+
+    for (size_t y = 0; y < height; ++y) {
+        float v = (float)y / (float)(height - 1);
+        for (size_t x = 0; x < width; ++x) {
+            float u = (float)x / (float)(width - 1);
+
+            // Convert UV to spherical coordinates to get point on sphere
+            float phi = (u * 2.0f * glm::pi<float>()) - glm::pi<float>();
+            float theta = v * glm::pi<float>();
+
+            glm::vec3 p_ico;
+            p_ico.x = -std::sin(theta) * std::sin(phi);
+            p_ico.y = std::cos(theta);
+            p_ico.z = std::sin(theta) * std::cos(phi);
+
+            glm::vec3 p = glm::normalize(p_ico) * scale;
+            glm::vec3 normal_dir = glm::normalize(p_ico); // approximation of base normal
+            
+            glm::vec3 blendWeights = glm::abs(normal_dir);
+            blendWeights = blendWeights * blendWeights * blendWeights;
+            blendWeights /= (blendWeights.x + blendWeights.y + blendWeights.z);
+
+            float noiseX = ridgedFBM(glm::vec3(p.y, p.z, p.x), octaves);
+            float noiseY = ridgedFBM(glm::vec3(p.x, p.z, p.y), octaves);
+            float noiseZ = ridgedFBM(glm::vec3(p.x, p.y, p.z), octaves);
+
+            float val = noiseX * blendWeights.x + noiseY * blendWeights.y + noiseZ * blendWeights.z;
+
+            float pixel[4] = {val, val, val, 1.0f};
+            uint8_t* bytes = reinterpret_cast<uint8_t*>(pixel);
+            data.insert(data.end(), bytes, bytes + sizeof(float) * 4);
+        }
+    }
+    return std::make_shared<Core::Texture>(data, width, height, Core::RGBA32F, sizeof(float) * 4, Core::RockyNoise);
 }
 
 /*
