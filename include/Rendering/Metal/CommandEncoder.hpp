@@ -10,6 +10,7 @@
 #include <Rendering/IPSO.hpp>
 
 #include "PSO.hpp"
+#include "MeshPSO.hpp"
 
 namespace Rendering::Metal
 {
@@ -21,13 +22,31 @@ namespace Rendering::Metal
 
         void bind(IPSO* pso) override
         {
-            auto metalPSO = dynamic_cast<PSO*>(pso);
-            if (!metalPSO)
+            _encoder->setRenderPipelineState(static_cast<MTL::RenderPipelineState*>(pso->raw()));
+            /*
+            if (pso->config.pipelineType == PipelineType::Vertex)
             {
-                throw std::runtime_error("Invalid PipelineStateObject type");
+                auto metalPSO = dynamic_cast<PSO*>(pso);
+                if (!metalPSO)
+                {
+                    throw std::runtime_error("Invalid PipelineStateObject type: expected PSO for Vertex pipeline");
+                }
+                _encoder->setRenderPipelineState(static_cast<MTL::RenderPipelineState*>(metalPSO->raw()));
             }
-            // Assuming we have a command buffer and render pass descriptor available
-            _encoder->setRenderPipelineState(static_cast<MTL::RenderPipelineState*>(metalPSO->raw()));
+            else if (pso->config.pipelineType == PipelineType::Mesh)
+            {
+                auto metalMeshPSO = dynamic_cast<MeshPSO*>(pso);
+                if (!metalMeshPSO)
+                {
+                    throw std::runtime_error("Invalid PipelineStateObject type: expected MeshPSO for Mesh pipeline");
+                }
+                _encoder->setRenderPipelineState(static_cast<MTL::RenderPipelineState*>(metalMeshPSO->raw()));
+            }
+            else
+            {
+                throw std::runtime_error("Unknown pipeline type");
+            }
+            */
         }
 
         void* raw() override

@@ -16,18 +16,11 @@
 #include <functional>
 #include <Rendering/Lights.hpp>
 
+#include "RenderQueue.hpp"
 
 
 namespace Rendering
 {
-    enum class RenderLayer
-    {
-        BACKGROUND,
-        OPAQUE,
-        TRANSPARENT,
-        UI,
-        TEXT
-    };
 
     class IRenderer
     {
@@ -39,14 +32,12 @@ namespace Rendering
             _psoFactory(std::move(psoFactory)),
             _renderableFactory(std::move(renderableFactory)),
             _pipelineStateObjects(std::unordered_map<std::string, std::shared_ptr<IPSO>>()),
-            _nextRenderableID(0),
+            _nextRenderableID(1),
+            _nextInstanceMaterialID(1),
             _freeIDs(std::vector<uint64_t>()),
-            _renderables(std::array<std::unordered_map<uint64_t, std::shared_ptr<IRenderable>>, 5>()),
-            _lights(Lights{}),
+            _renderables(std::unordered_map<uint64_t, std::shared_ptr<IRenderable>>()),
             _debugUICallback([]() {}),
-            _drawableSize({800.0f, 600.0f}),
-            _materials(std::unordered_map<std::string, std::vector<std::vector<std::byte>>>()),
-            _materialInfos(std::unordered_map<std::string, std::vector<MaterialInfo>>())
+            _drawableSize({800.0f, 600.0f})
         {}
 
         virtual ~IRenderer() = default;
@@ -57,64 +48,109 @@ namespace Rendering
         IRenderer& operator=(IRenderer&&) = delete;
 
         // UPDATE
-        virtual void update(const glm::mat4x4& viewMatrix, glm::mat4x4& projectionMatrix, const glm::vec4& viewportNormalizedRect = {0.0f, 0.0f, 1.0f, 1.0f}) = 0;
-
-        // LIGHTS API
-        void setDirectionalLight(const DirectionalLight& light, int index);
-        void setPointLight(const PointLight& light, int index);
-        void clearLights();
-        void setAmbientGlobalLight(const glm::vec4& color);
-        void setLights(const Lights& lights);
+        virtual void update(const RenderQueue& renderQueue, const glm::vec4& viewportNormalizedRect) = 0;
 
         // RENDERABLE API
         uint64_t addRenderable(
-            const Mesh& mesh,
-            const PSOConfig& psoConfig,
+            const Geometry::Mesh& mesh,
             const std::vector<std::shared_ptr<Texture>>& textures,
-            RenderLayer layer = RenderLayer::OPAQUE
+            bool immediate = false
             );
         std::shared_ptr<IRenderable> removeRenderable(uint64_t index);
-        void setVisible(uint64_t index, bool visible);
-        void setWireframe(uint64_t index, bool wireframe);
-        void setMaterial(const std::vector<std::byte>& materialBytes, MaterialType type, uint64_t index)
-        {
-            for (auto& layer : _renderables)
-            {
-                if (layer.contains(index)) layer[index]->setMaterial(materialBytes, type);
-            }
-        }
-        const glm::mat4x4& modelMatrix(uint64_t index);
-        void modelMatrix(uint64_t index, const glm::mat4x4& matrix);
 
         // PSO API
-        void loadPSOs(const std::unordered_map<std::string, const PSOConfig>& psoConfigs);
+        void loadPSOs(const std::unordered_map<std::string, const PSOConfig>& configs);
         void loadPSO(const PSOConfig& config);
-        void setMaterial(const std::string& name, const std::vector<std::byte>& materialBytes, MaterialType type);
 
         void setDebugUICallback(std::function<void()> callback);
 
-        //[[nodiscard]] virtual glm::mat4x4 getProjectionMatrix() const = 0;
+        // get
+        [[nodiscard]] glm::vec2 getDrawableSize() const { return _drawableSize; }
 
-        std::array<float, 2> getDrawableSize() const { return _drawableSize; }
+        // add a per object material instance creating default data for the given pso and return the id
+        // the id will be used for changing data
+        uint64_t addDefaultInstanceMaterial(const std::string& psoName, bool immediate = false);
 
+        // if a material instance has that material type, then override with bytes
+        void setInstanceMaterial(uint64_t id, const std::vector<std::byte>& bytes, MaterialType type);
+        void removeInstanceMaterial(uint64_t id);
+
+        // global material functions
+        void setGlobalMaterial(const std::string& name, const std::vector<std::byte>& bytes, MaterialType type);
+        void setGlobalMaterial(const std::vector<std::byte>& bytes, MaterialType type);
+
+        template <typename T>
+        std::optional<T> getGlobalMaterial(MaterialType type)
+        {
+            for (auto& [name, materials] : _globalMaterials)
+            {
+                for (auto& [materialType, materialBytes] : materials)
+                {
+                    if (materialType == type)
+                    {
+                        T t;
+                        memcpy(&t, materialBytes.data(), sizeof(T));
+                        return t;
+                    }
+                }
+            }
+            return std::nullopt;
+        }
+
+        std::pair<uint64_t, uint64_t> iDraw(
+            const Geometry::Mesh& mesh,
+            const std::vector<std::shared_ptr<Texture>>& textures,
+            const std::string& psoName,
+            const vector<pair<MaterialType, std::vector<std::byte>>>& materialOverrides,
+            bool castShadows = false,
+            bool wireframe = false,
+            glm::ivec3 grid = {0, 0, 0},
+            glm::ivec3 threadgroup = {0, 0, 0}
+            );
+        std::pair<uint64_t, uint64_t> iDrawRectWithColor(const glm::vec4& rect, float depth, const glm::vec4& color);
+        std::pair<uint64_t, uint64_t> iDrawRectWithTex(const glm::vec4& rect, float depth, const std::vector<std::shared_ptr<Texture>>& textures, const std::string& pso);
+
+        virtual void compute(
+            const std::string& psoName,
+            const std::vector<std::shared_ptr<Texture>>& inputTextures,
+            const std::vector<std::shared_ptr<Texture>>& outputTextures,
+            const std::vector<std::pair<MaterialType, std::vector<std::byte>>>& materials,
+            glm::ivec3 grid, glm::ivec3 threadgroup
+            ) = 0;
 
     protected:
+
+        // FACTORIES
         std::unique_ptr<IPSOFactory> _psoFactory;
         std::unique_ptr<IRenderableFactory> _renderableFactory;
 
+        // DATA
+        std::unordered_map<uint64_t, std::shared_ptr<IRenderable>> _renderables;
+
         std::unordered_map<std::string, std::shared_ptr<IPSO>> _pipelineStateObjects;
-        std::unordered_map<std::string, std::vector<std::vector<std::byte>>> _materials;
-        std::unordered_map<std::string, std::vector<MaterialInfo>> _materialInfos;
 
+        std::unordered_map<std::string, std::unordered_map<MaterialType, std::vector<std::byte>>> _globalMaterials;
+        std::unordered_map<uint64_t, std::unordered_map<MaterialType, std::vector<std::byte>>> _instanceMaterials;
+
+        std::unordered_map<std::string, std::unordered_map<TextureType, uint64_t>> _globalTextures;
+
+        std::vector<uint64_t> _immediateRenderables;
+        std::vector<uint64_t> _immediateInstanceMaterials;
+
+        void setGlobalTexture(TextureType type, uint64_t);
+        void setGlobalTexture(const std::string& name, TextureType type, uint64_t);
+        virtual void destroyTexture(uint64_t) = 0;
+
+        RenderQueue _immediateRenderQueue;
+        // IDs
         uint64_t _nextRenderableID;
+        uint64_t _nextInstanceMaterialID;
         std::vector<uint64_t> _freeIDs;
-        std::array<std::unordered_map<uint64_t, std::shared_ptr<IRenderable>>, 5> _renderables;
-
-        Lights _lights; // global lights structure, can be used by the renderables
+        std::vector<uint64_t> _freeInstanceMaterialIDs;
 
         std::function<void()> _debugUICallback;
 
-        std::array<float, 2> _drawableSize;
+        glm::vec2 _drawableSize;
     };
 }
 

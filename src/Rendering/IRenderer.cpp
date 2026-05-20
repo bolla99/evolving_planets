@@ -11,30 +11,17 @@
 namespace Rendering
 {
     uint64_t IRenderer::addRenderable(
-        const Mesh& mesh,
-        const PSOConfig& psoConfig,
+        const Geometry::Mesh& mesh,
         const std::vector<std::shared_ptr<Texture>>& textures,
-        RenderLayer layer
+        bool immediate
     )
     {
-        if (!_pipelineStateObjects.contains(psoConfig.name))
-        {
-            try
-            {
-                loadPSO(psoConfig);
-            } catch (const std::exception& e)
-            {
-                std::cerr << "Error creating PSO with name " << psoConfig.name << ": " << e.what() << std::endl;
-                throw std::runtime_error("Failed to create PSO for renderable");
-            }
-        }
-
-        // create the renderable from the mesh and the pso
         try
         {
-            auto renderable = _renderableFactory->fromMesh(mesh, _pipelineStateObjects.at(psoConfig.name), textures);
+            auto renderable = _renderableFactory->fromMesh(mesh, textures);
             if (!renderable)
             {
+                std::cerr << "Failed to create renderable from mesh" << std::endl;
                 throw std::runtime_error("Failed to create renderable from mesh");
             }
             // check if we have a free ID to recycle
@@ -46,9 +33,13 @@ namespace Rendering
             } else {
                 id = _nextRenderableID++;
             }
-            _renderables[static_cast<int>(layer)].emplace(
+            _renderables.emplace(
                 id,
                 renderable);
+            if (immediate)
+            {
+                _immediateRenderables.push_back(id);
+            }
             return id; // return the index of the added renderable
         } catch (const std::exception& e)
         {
@@ -59,70 +50,21 @@ namespace Rendering
 
     std::shared_ptr<IRenderable> IRenderer::removeRenderable(uint64_t index)
     {
-        for (auto& layer : _renderables)
+        if (_renderables.contains(index))
         {
-            if (layer.contains(index))
-            {
-                auto renderable = layer[index];
-                layer.erase(index);
-                // recycle the ID
-                _freeIDs.push_back(index);
-                return renderable;
-            }
+            auto renderable = _renderables[index];
+            _renderables.erase(index);
+            // recycle the ID
+            _freeIDs.push_back(index);
+            return renderable;
         }
         return nullptr;
     }
 
-    void IRenderer::setVisible(uint64_t index, bool visible)
-    {
-        for (auto& layer : _renderables)
-        {
-            if (layer.contains(index))
-            {
-                layer[index]->visible = visible;
-                return; // found and set visibility
-            }
-        }
-    }
-
-    void IRenderer::setWireframe(uint64_t index, bool wireframe)
-    {
-        for (auto& layer : _renderables)
-        {
-            if (layer.contains(index))
-            {
-                layer[index]->wireframe = wireframe;
-                return; // found and set wireframe mode
-            }
-        }
-    }
-    const glm::mat4x4& IRenderer::modelMatrix(uint64_t index)
-    {
-        for (auto& layer : _renderables)
-        {
-            if (layer.contains(index))
-            {
-                return layer[index]->modelMatrix(); // return the model matrix of the renderable
-            }
-        }
-        throw std::runtime_error("Renderable not found");
-    }
-    void IRenderer::modelMatrix(uint64_t index, const glm::mat4x4& matrix)
-    {
-        for (auto& layer : _renderables)
-        {
-            if (layer.contains(index))
-            {
-                layer[index]->modelMatrix(matrix); // set the model matrix of the renderable
-                return; // found and set model matrix
-            }
-        }
-    }
-
     // load the pipeline state objects from the PSOConfigs using the pso factory
-    void IRenderer::loadPSOs(const std::unordered_map<std::string, const PSOConfig>& psoConfigs)
+    void IRenderer::loadPSOs(const std::unordered_map<std::string, const PSOConfig>& configs)
     {
-        for (const auto& val : psoConfigs | std::views::values)
+        for (const auto& val : configs | std::views::values)
         {
             loadPSO(val);
         }
@@ -130,71 +72,22 @@ namespace Rendering
 
     void IRenderer::loadPSO(const PSOConfig& config)
     {
+        if (_pipelineStateObjects.contains(config.name)) return;
+
         _pipelineStateObjects.emplace(
             config.name,
             _psoFactory->create(config)
         );
-        // create materials
-        for (const auto& materialInfo : config.materials)
-        {
-            if (materialInfo.frequency == MaterialFrequency::PerFrame)
-            {
-                _materialInfos[config.name].emplace_back(materialInfo);
-                _materials[config.name].emplace_back(getDefaultBytes(materialInfo.type));
-            }
-        }
-    }
+        if (_globalMaterials.contains(config.name)) return;
 
-    void IRenderer::setMaterial(const std::string& name, const std::vector<std::byte>& materialBytes, MaterialType type)
-    {
-        if (_materials.contains(name))
-        {
-            for (int i = 0; i < _materials.at(name).size(); i++)
-            {
-                if (_materialInfos[name][i].type == type)
-                {
-                    _materials[name][i] = materialBytes;
-                    return;
-                }
-            }
-        }
-    }
+        auto material = std::unordered_map<MaterialType, std::vector<std::byte>>();
 
-
-    void IRenderer::setDirectionalLight(const DirectionalLight& light, int index)
-    {
-        if (index >= 0 && index < MAX_DIRECTIONAL_LIGHTS)
+        // create pso default materials
+        for (const auto& info : config.globalMaterials)
         {
-            _lights.directionalLights[index] = light;
+            material.insert({info.type, getDefaultBytes(info.type)});
         }
-        else
-        {
-            std::cerr << "Invalid directional light index: " << index << std::endl;
-        }
-    }
-    void IRenderer::setPointLight(const PointLight& light, int index)
-    {
-        if (index >= 0 && index < MAX_POINT_LIGHTS)
-        {
-            _lights.pointLights[index] = light;
-        }
-        else
-        {
-            std::cerr << "Invalid point light index: " << index << std::endl;
-        }
-    }
-    void IRenderer::clearLights()
-    {
-        _lights = Lights{}; // reset the lights structure
-    }
-
-    void IRenderer::setAmbientGlobalLight(const glm::vec4& color)
-    {
-        _lights.globalAmbientLightColor = color;
-    }
-    void IRenderer::setLights(const Lights& lights)
-    {
-        _lights = lights;
+        _globalMaterials.emplace(config.name, material);
     }
 
     void IRenderer::setDebugUICallback(std::function<void()> callback)
@@ -202,4 +95,156 @@ namespace Rendering
         _debugUICallback = std::move(callback);
     }
 
+    // add a per object material instance creating default data for the given pso and return the id
+    // the id will be used for changing data
+    uint64_t IRenderer::addDefaultInstanceMaterial(const std::string& psoName, bool immediate)
+    {
+        uint64_t materialInstanceID;
+        if (!_freeInstanceMaterialIDs.empty())
+        {
+            materialInstanceID = _freeInstanceMaterialIDs.back();
+            _freeInstanceMaterialIDs.pop_back();
+        }
+        else
+        {
+            materialInstanceID = _nextInstanceMaterialID++;
+        }
+        auto material = std::unordered_map<MaterialType, std::vector<std::byte>>();
+        auto infos = _pipelineStateObjects.at(psoName)->config.instanceMaterials;
+        for (auto& info : infos)
+        {
+            material.insert({info.type, getDefaultBytes(info.type)});
+        }
+        _instanceMaterials.insert({materialInstanceID, material});
+
+        if (immediate)
+        {
+            _immediateInstanceMaterials.push_back(materialInstanceID);
+        }
+        return materialInstanceID;
+    }
+
+    // if material instance has that material type, then override with bytes
+    void IRenderer::setInstanceMaterial(const uint64_t id, const std::vector<std::byte>& bytes, MaterialType type)
+    {
+        /*
+        int index = getMaterialIndex(id, type);
+        if (index == -1) return;
+        setInstanceMaterial(id, bytes, index);
+         */
+        if (_instanceMaterials.contains(id)) {
+            if (_instanceMaterials.at(id).contains(type)) {
+                _instanceMaterials.at(id).at(type) = bytes;
+            }
+        }
+    }
+
+    void IRenderer::removeInstanceMaterial(uint64_t id)
+    {
+        if (_instanceMaterials.contains(id))
+        {
+            _freeInstanceMaterialIDs.push_back(id);
+            _instanceMaterials.erase(id);
+            //_instanceMaterialsPSONames.erase(id);
+        }
+    }
+
+    void IRenderer::setGlobalMaterial(const std::string& name, const std::vector<std::byte>& bytes, MaterialType type)
+    {
+        if (_globalMaterials.contains(name))
+        {
+            if (_globalMaterials.at(name).contains(type))
+            {
+                _globalMaterials.at(name).at(type) = bytes;
+            }
+        }
+    }
+
+    void IRenderer::setGlobalMaterial(const std::vector<std::byte>& bytes, MaterialType type)
+    {
+        for (const auto& psoName : _globalMaterials | std::views::keys)
+        {
+            if (_globalMaterials.at(psoName).contains(type))
+            {
+                _globalMaterials.at(psoName).at(type) = bytes;
+            }
+        }
+    }
+
+    std::pair<uint64_t, uint64_t> IRenderer::iDraw(
+        const Geometry::Mesh& mesh,
+        const std::vector<std::shared_ptr<Texture>>& textures,
+        const std::string& psoName, const vector<pair<MaterialType,
+        std::vector<std::byte>>>& materialOverrides,
+        bool castShadows,
+        bool wireframe,
+        glm::ivec3 grid,
+        glm::ivec3 threadgroup
+        )
+    {
+        auto renderable = addRenderable(mesh, textures, true);
+        auto material = addDefaultInstanceMaterial(psoName, true);
+        for (const auto& override : materialOverrides)
+        {
+            setInstanceMaterial(material, override.second, override.first);
+        }
+        const auto item = RenderItem(renderable, material, castShadows, wireframe, grid, threadgroup);
+        _immediateRenderQueue.add(item, psoName, RenderLayer::OPAQUE);
+        return {renderable, material};
+    }
+
+    std::pair<uint64_t, uint64_t> IRenderer::iDrawRectWithColor(const glm::vec4& rect, float depth, const glm::vec4& color)
+    {
+        auto mesh = Geometry::Mesh::quad({0.0f, 0.0f, 1.0f, 1.0f}, depth, color, 1.0, 1.0);
+        return iDraw(*mesh, {}, "UI", {
+            {MaterialType::RECT, getBytes(rect) }
+        });
+    }
+
+    std::pair<uint64_t, uint64_t> IRenderer::iDrawRectWithTex(const glm::vec4& rect, float depth, const std::vector<std::shared_ptr<Texture>>& textures, const std::string& pso)
+    {
+        auto mesh = Geometry::Mesh::quad({0.0f, 0.0f, 1.0f, 1.0f}, depth, {1.0f, 0.0f, 1.0f, 1.0f}, 1.0f, 1.0f);
+        return iDraw(*mesh, textures, pso, {
+            {MaterialType::RECT, getBytes(rect) }
+        });
+    }
+
+    // set this texture as global textre of type == type for every pso
+    void IRenderer::setGlobalTexture(TextureType type, uint64_t id)
+    {
+        for (auto& pso : _pipelineStateObjects)
+        {
+            auto globalTexturesConfig = pso.second->config.globalTextures;
+            for (auto & textureInfo : globalTexturesConfig)
+            {
+                if (textureInfo.type == type)
+                {
+                    setGlobalTexture(pso.first, type, id);
+                }
+            }
+        }
+    }
+
+    // if there is already a texture of this type for this pso, then destroy last texture
+    // and set the new one
+    void IRenderer::setGlobalTexture(const std::string& name, TextureType type, uint64_t id)
+    {
+        if (_globalTextures.contains(name))
+        {
+            if (_globalTextures.at(name).contains(type))
+            {
+                auto oldID = _globalTextures.at(name).at(type);
+                destroyTexture(oldID);
+                _globalTextures.at(name).at(type) = id;
+            }
+            else
+            {
+                _globalTextures.at(name).insert({type, id});
+            }
+        }
+        else
+        {
+            _globalTextures.insert({name, {{type, id}}});
+        }
+    }
 }

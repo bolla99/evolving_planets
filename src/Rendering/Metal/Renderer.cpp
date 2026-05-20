@@ -21,8 +21,10 @@
 
 #include "imgui_impl_metal.h"
 #include "imgui_impl_sdl2.h"
+#include "timer.hpp"
 #include "glm/ext/matrix_clip_space.hpp"
 #include "glm/ext/matrix_transform.hpp"
+#include "Rendering/Metal/RingBuffer.hpp"
 
 // resources acquisition
 // device, layer, library, PSOs, VertexDescriptors
@@ -72,208 +74,286 @@ namespace Rendering::Metal
     }
 
     // rendering loop
-    void Renderer::update(const glm::mat4x4& viewMatrix, glm::mat4x4& projectionMatrix, const glm::vec4& viewportNormalizedRect)
+    void Renderer::update(const RenderQueue& renderQueue, const glm::vec4& viewportNormalizedRect)
     {
         auto pool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
-        const auto queue = NS::TransferPtr(_device->newCommandQueue());
+        static const auto queue = NS::TransferPtr(_device->newCommandQueue());
+        const auto buffer = queue->commandBuffer();
+
         _drawable = _layer->nextDrawable();
 
-        // SET DRAWABLE SIZE BUFFER
         _drawableSize = {
             (float)_drawable->texture()->width(),
             (float)_drawable->texture()->height()
         };
 
-        // PASS DESCRIPTOR 1
-        const auto preliminarClearColorPassDescriptor = NS::TransferPtr(MTL::RenderPassDescriptor::alloc()->init());
-        preliminarClearColorPassDescriptor->colorAttachments()->object(0)->setTexture(_drawable->texture());
-        preliminarClearColorPassDescriptor->colorAttachments()->object(0)->setLoadAction(MTL::LoadAction::LoadActionClear);
-        preliminarClearColorPassDescriptor->colorAttachments()->object(0)->setClearColor(MTL::ClearColor{0.0f, 0.0f, 0.0f, 1.0});
-        preliminarClearColorPassDescriptor->colorAttachments()->object(0)->setStoreAction(MTL::StoreAction::StoreActionStore);
-
-        // PASS DESCRIPTOR 2
-        const auto passDescriptor = NS::TransferPtr(MTL::RenderPassDescriptor::alloc()->init());
-        passDescriptor->colorAttachments()->object(0)->setTexture(_drawable->texture());
-        passDescriptor->colorAttachments()->object(0)->setLoadAction(MTL::LoadAction::LoadActionClear);
-        passDescriptor->colorAttachments()->object(0)->setClearColor(MTL::ClearColor{0.5f, 0.5f, 0.5f, 1.0});
-        passDescriptor->colorAttachments()->object(0)->setStoreAction(MTL::StoreAction::StoreActionStore);
-
-        // DEPTH TEXTURE DESCRIPTOR
-        auto depthDesc = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
-        depthDesc->setTextureType(MTL::TextureType2D);
-        depthDesc->setPixelFormat(MTL::PixelFormatDepth32Float);
-        depthDesc->setWidth(_drawable->texture()->width());
-        depthDesc->setHeight(_drawable->texture()->height());
-        depthDesc->setStorageMode(MTL::StorageModePrivate);
-        depthDesc->setUsage(MTL::TextureUsageRenderTarget);
-
-        // DEPTH TEXTURE
-        auto depthTexture = NS::TransferPtr(_device->newTexture(depthDesc.get()));
-        passDescriptor->depthAttachment()->setTexture(depthTexture.get());
-        passDescriptor->depthAttachment()->setLoadAction(MTL::LoadAction::LoadActionClear);
-        passDescriptor->depthAttachment()->setStoreAction(MTL::StoreAction::StoreActionStore);
-        passDescriptor->depthAttachment()->setClearDepth(1.0);
-
-        // CREATE BUFFER
-        const auto buffer = queue->commandBuffer();
-
-        // ENCODERS
-
-        const auto clearColorEncoder = buffer->renderCommandEncoder(preliminarClearColorPassDescriptor.get());
-        clearColorEncoder->setViewport({0, 0, _drawableSize[0], _drawableSize[1], 0, 1});
-        clearColorEncoder->setScissorRect({0, 0, static_cast<NS::UInteger>(_drawableSize[0]), static_cast<NS::UInteger>(_drawableSize[1])});
-        clearColorEncoder->endEncoding();
-
-        // encoder ownership is never obtained
-        // an eventual abstract wrapper should not take ownership of the encoder
-        const auto encoder = buffer->renderCommandEncoder(passDescriptor.get());
+        static auto ringBuffer = RingBuffer(_device.get());
+        ringBuffer.beginFrame();
 
         auto viewport = MTL::Viewport{viewportNormalizedRect[0] * _drawableSize[0], viewportNormalizedRect[1] * _drawableSize[1], viewportNormalizedRect[2] * (_drawableSize[0]), viewportNormalizedRect[3] * _drawableSize[1], 0, 1};
-        encoder->setViewport(viewport);
         auto scissorRect = MTL::ScissorRect(viewport.originX, viewport.originY, viewport.width, viewport.height);
-        encoder->setScissorRect(scissorRect);
 
-        //encoder->setViewport({0, 0, drawableSize[0], drawableSize[1], 0, 1});
+        // DEPTH STENCIL
+        static auto depthStencilDescriptor = NS::TransferPtr(MTL::DepthStencilDescriptor::alloc()->init());
+        depthStencilDescriptor->setDepthCompareFunction(MTL::CompareFunctionLessEqual);
+        depthStencilDescriptor->setDepthWriteEnabled(true);
+        static auto depthStencilState = NS::TransferPtr(_device->newDepthStencilState(depthStencilDescriptor.get()));
+
+        static auto shadowPassDepthTextureDesc = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
+        shadowPassDepthTextureDesc->setTextureType(MTL::TextureType2DArray);
+        shadowPassDepthTextureDesc->setPixelFormat(MTL::PixelFormatDepth32Float);
+        shadowPassDepthTextureDesc->setWidth(1024);
+        shadowPassDepthTextureDesc->setHeight(1024);
+        shadowPassDepthTextureDesc->setArrayLength(MAX_DIRECTIONAL_LIGHTS);
+        shadowPassDepthTextureDesc->setStorageMode(MTL::StorageModePrivate);
+        shadowPassDepthTextureDesc->setUsage(MTL::TextureUsageRenderTarget | MTL::TextureUsageShaderRead);
+        static auto shadowPassDepthTexture = NS::TransferPtr(_device->newTexture(shadowPassDepthTextureDesc.get()));
+
+        // DIRECTIONAL SHADOWS
+        auto lights = getGlobalMaterial<Lights>(LIGHTS);
+        static const auto shadowPassDescriptor = NS::TransferPtr(MTL::RenderPassDescriptor::alloc()->init());
+        shadowPassDescriptor->depthAttachment()->setTexture(shadowPassDepthTexture.get());
+        shadowPassDescriptor->depthAttachment()->setLoadAction(MTL::LoadAction::LoadActionClear);
+        shadowPassDescriptor->depthAttachment()->setStoreAction(MTL::StoreAction::StoreActionStore);
+        shadowPassDescriptor->depthAttachment()->setClearDepth(1.0);
+        shadowPassDescriptor->colorAttachments()->object(0)->setTexture(nullptr);
+
+        shadowPassDescriptor->setRenderTargetArrayLength(shadowPassDepthTexture->arrayLength());
+
+        auto shadowEncoder = buffer->renderCommandEncoder(shadowPassDescriptor.get());
+        shadowEncoder->setDepthStencilState(depthStencilState.get());
+
+        auto shadowRce = CommandEncoder(shadowEncoder);
+        auto shadowPSO = _pipelineStateObjects["DirectionalShadow"];
+        shadowRce.bind(shadowPSO.get());
+
+        shadowEncoder->setFrontFacingWinding(MTL::WindingCounterClockwise);
+        if (shadowPSO->config.culling == Front)
+            shadowEncoder->setCullMode(MTL::CullModeFront);
+        else
+            shadowEncoder->setCullMode(MTL::CullModeBack);
+
+        bindGlobalMaterials(shadowPSO.get(), shadowEncoder, ringBuffer);
+
+        for (auto layer : renderQueue.queue)
+        {
+            for (auto& [psoName, items] : layer)
+            {
+                for (const auto& item : items)
+                {
+                    if (item.castShadows)
+                    {
+                        bindInstanceMaterials(item.mID, shadowPSO.get(), shadowEncoder, ringBuffer);
+                        _renderables.at(item.rID)->render(&shadowRce, shadowPSO.get(), lights.value().numDirectionalLights);
+                    }
+                }
+            }
+        }
+        shadowEncoder->endEncoding();
+
+        // set global texture for shadow rendering
+        auto textureID = addTexture(shadowPassDepthTexture);
+        setGlobalTexture(ShadowMap, textureID);
+
+        // POINT LIGHT SHADOWS
+        static auto pointShadowDepthTextureDesc = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
+        pointShadowDepthTextureDesc->setTextureType(MTL::TextureTypeCubeArray);
+        pointShadowDepthTextureDesc->setPixelFormat(MTL::PixelFormatDepth32Float);
+        pointShadowDepthTextureDesc->setWidth(128);
+        pointShadowDepthTextureDesc->setHeight(128);
+        pointShadowDepthTextureDesc->setArrayLength(MAX_POINT_LIGHTS);
+        pointShadowDepthTextureDesc->setStorageMode(MTL::StorageModePrivate);
+        pointShadowDepthTextureDesc->setUsage(MTL::TextureUsageRenderTarget | MTL::TextureUsageShaderRead);
+        static auto pointShadowDepthTexture = NS::TransferPtr(_device->newTexture(pointShadowDepthTextureDesc.get()));
+
+        auto pointShadowPassDescriptor = NS::TransferPtr(MTL::RenderPassDescriptor::alloc()->init());
+        pointShadowPassDescriptor->depthAttachment()->setTexture(pointShadowDepthTexture.get());
+        pointShadowPassDescriptor->depthAttachment()->setLoadAction(MTL::LoadAction::LoadActionClear);
+        pointShadowPassDescriptor->depthAttachment()->setStoreAction(MTL::StoreAction::StoreActionStore);
+        pointShadowPassDescriptor->depthAttachment()->setClearDepth(1.0);
+        pointShadowPassDescriptor->colorAttachments()->object(0)->setTexture(nullptr);
+        pointShadowPassDescriptor->setRenderTargetArrayLength(pointShadowDepthTexture->arrayLength() * 6);
+        auto pointShadowEncoder = buffer->renderCommandEncoder(pointShadowPassDescriptor.get());
+        pointShadowEncoder->setDepthStencilState(depthStencilState.get());
+        auto pointShadowRce = CommandEncoder(pointShadowEncoder);
+        auto pointShadowPSO = _pipelineStateObjects["PointShadow"];
+        pointShadowRce.bind(pointShadowPSO.get());
+        bindGlobalMaterials(pointShadowPSO.get(), pointShadowEncoder, ringBuffer);
+
+        pointShadowEncoder->setFrontFacingWinding(MTL::WindingCounterClockwise);
+        if (pointShadowPSO->config.culling == Front)
+            pointShadowEncoder->setCullMode(MTL::CullModeFront);
+        else
+            pointShadowEncoder->setCullMode(MTL::CullModeBack);
+        for (auto layer : renderQueue.queue)
+        {
+            for (auto& [psoName, items] : layer)
+            {
+                for (const auto& item : items)
+                {
+                    if (item.castShadows)
+                    {
+                        bindInstanceMaterials(item.mID, pointShadowPSO.get(), pointShadowEncoder, ringBuffer);
+                        _renderables.at(item.rID)->render(&pointShadowRce, pointShadowPSO.get(), lights.value().numPointLights * 6);
+                    }
+                }
+            }
+        }
+
+        pointShadowEncoder->endEncoding();
+
+        auto id = addTexture(pointShadowDepthTexture);
+        setGlobalTexture(CubeShadowMap, id);
+
+
+        /////////////////////// MAIN RENDER PASS ///////////////////
+
+        // PASS DESCRIPTOR
+        const auto passDescriptor = NS::TransferPtr(MTL::RenderPassDescriptor::alloc()->init());
+
+        int sampleCount = 4; // Default to 4
+        // check if at least one pso in the queue has msaa enabled
+        // for now we force it globally if any pso uses it, but since we set it in PSOConfig it should be consistent
+        // Actually, let's just use 4 as requested/defaulted.
+
+        // MSAA TEXTURE
+        if (!_msaaTexture || _msaaTexture->width() != _drawable->texture()->width() || _msaaTexture->height() != _drawable->texture()->height())
+        {
+            auto msaaDesc = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
+            msaaDesc->setTextureType(MTL::TextureType2DMultisample);
+            msaaDesc->setPixelFormat(MTL::PixelFormatBGRA8Unorm);
+            msaaDesc->setWidth(_drawable->texture()->width());
+            msaaDesc->setHeight(_drawable->texture()->height());
+            msaaDesc->setSampleCount(sampleCount);
+            msaaDesc->setStorageMode(MTL::StorageModePrivate);
+            msaaDesc->setUsage(MTL::TextureUsageRenderTarget);
+            _msaaTexture = NS::TransferPtr(_device->newTexture(msaaDesc.get()));
+        }
+
+        passDescriptor->colorAttachments()->object(0)->setTexture(_msaaTexture.get());
+        passDescriptor->colorAttachments()->object(0)->setResolveTexture(_drawable->texture());
+        passDescriptor->colorAttachments()->object(0)->setLoadAction(MTL::LoadAction::LoadActionClear);
+        passDescriptor->colorAttachments()->object(0)->setClearColor(MTL::ClearColor{0.0f, 0.0f, 0.0f, 1.0});
+        passDescriptor->colorAttachments()->object(0)->setStoreAction(MTL::StoreAction::StoreActionMultisampleResolve);
+
+        // DEPTH TEXTURE
+        if (!_depthTexture || _depthTexture->width() != _drawable->texture()->width() || _depthTexture->height() != _drawable->texture()->height())
+        {
+            auto depthDesc = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
+            depthDesc->setTextureType(MTL::TextureType2DMultisample);
+            depthDesc->setPixelFormat(MTL::PixelFormatDepth32Float);
+            depthDesc->setWidth(_drawable->texture()->width());
+            depthDesc->setHeight(_drawable->texture()->height());
+            depthDesc->setSampleCount(sampleCount);
+            depthDesc->setStorageMode(MTL::StorageModePrivate);
+            depthDesc->setUsage(MTL::TextureUsageRenderTarget);
+            _depthTexture = NS::TransferPtr(_device->newTexture(depthDesc.get()));
+        }
+
+        passDescriptor->depthAttachment()->setTexture(_depthTexture.get());
+        passDescriptor->depthAttachment()->setLoadAction(MTL::LoadAction::LoadActionClear);
+        passDescriptor->depthAttachment()->setStoreAction(MTL::StoreAction::StoreActionDontCare);
+        passDescriptor->depthAttachment()->setClearDepth(1.0);
+
+        // main encoder
+        auto encoder = buffer->renderCommandEncoder(passDescriptor.get());
+        encoder->setViewport(viewport);
+        encoder->setScissorRect(scissorRect);
+        encoder->setDepthStencilState(depthStencilState.get());
+        auto rce = CommandEncoder(encoder);
 
         ImGui_ImplMetal_NewFrame(passDescriptor.get());
         ImGui_ImplSDL2_NewFrame();
         ImGui::NewFrame();
 
-        // set depth test
-        auto depthStencilDescriptor = NS::TransferPtr(MTL::DepthStencilDescriptor::alloc()->init());
-        depthStencilDescriptor->setDepthCompareFunction(MTL::CompareFunctionLessEqual);
-        depthStencilDescriptor->setDepthWriteEnabled(true);
-        auto depthStencilState = NS::TransferPtr(_device->newDepthStencilState(depthStencilDescriptor.get()));
-
-        encoder->setDepthStencilState(depthStencilState.get());
-
-        /*
-        auto depthStencilDescriptorTransparent = NS::TransferPtr(MTL::DepthStencilDescriptor::alloc()->init());
-        depthStencilDescriptorTransparent->setDepthCompareFunction(MTL::CompareFunctionAlways);
-        depthStencilDescriptorTransparent->setDepthWriteEnabled(false);
-        auto depthStencilStateTransparent = NS::TransferPtr(_device->newDepthStencilState(depthStencilDescriptor.get()));
-        */
-
-        // set sampler
-        auto samplerDescriptor = NS::TransferPtr(MTL::SamplerDescriptor::alloc()->init());
-        samplerDescriptor->setMinFilter(MTL::SamplerMinMagFilter::SamplerMinMagFilterLinear);
-        samplerDescriptor->setMagFilter(MTL::SamplerMinMagFilter::SamplerMinMagFilterLinear);
-        samplerDescriptor->setSAddressMode(MTL::SamplerAddressMode::SamplerAddressModeClampToZero);
-        samplerDescriptor->setTAddressMode(MTL::SamplerAddressMode::SamplerAddressModeClampToZero);
-        samplerDescriptor->setNormalizedCoordinates(true);
-        auto sampler = NS::TransferPtr(encoder->device()->newSamplerState(samplerDescriptor.get()));
-        encoder->setFragmentSamplerState(sampler.get(), 0);
-        
-
-        // set lights
-        auto lightsBuffer = NS::TransferPtr(_device->newBuffer(
-            &_lights,
-            sizeof(_lights),
-            MTL::ResourceStorageModeShared
-        ));
-        encoder->setVertexBuffer(
-            lightsBuffer.get(),
-            0,
-            28 // buffer index 1
-        );
-        
-        auto drawableSizeBuffer = NS::TransferPtr(_device->newBuffer(
-            &_drawableSize,
-            2 * sizeof(float),
-            MTL::ResourceStorageModeShared
-        ));
-        /*
-        encoder->setVertexBuffer(
-            drawableSizeBuffer.get(),
-            0,
-            20 // buffer index 2
-        );*/
-
-        const auto viewProjectionMatrix = projectionMatrix * viewMatrix;
-
-        encoder->setVertexBytes(
-            &viewProjectionMatrix,
-            sizeof(viewProjectionMatrix),
-            30 // vertex buffer index 0
-        );
-
-        auto rce = CommandEncoder(encoder);
-
-
-        // build pso -> vector<renderables> data structure
-        for (int i = 0; i < 5; i++)
+        try
         {
-            // psoMap
-            auto psoMap = std::unordered_map<std::string, std::vector<std::shared_ptr<IRenderable>>>();
-            // fill map
-            for (const auto& renderable : _renderables[i] | std::views::values)
+            encoder->setFrontFacingWinding(MTL::WindingCounterClockwise);
+
+            for (auto layer : renderQueue.queue)
             {
-                auto psoName = renderable->_pso->name;
-                if (psoMap.contains(psoName))
+                for (auto& [psoName, items] : layer)
                 {
-                    psoMap.at(psoName).push_back(renderable);
-                } else
-                {
-                    psoMap.insert({psoName, std::vector<std::shared_ptr<IRenderable>>()});
-                    psoMap.at(psoName).push_back(renderable);
-                }
-            }
-            // render renderables
-            for (auto [psoName, renderables] : psoMap)
-            {
-                rce.bind(_pipelineStateObjects.at(psoName).get());
-                // set pso materials
-                for (int j = 0; j < _materialInfos[psoName].size(); j++)
-                {
-                    const auto& materialInfo = _materialInfos[psoName][j];
-                    const auto& material = _materials[psoName][j];
-                    auto materialBuffer = NS::TransferPtr(encoder->device()->newBuffer(material.data(), material.size(), MTL::ResourceStorageModeShared));
-                    if (materialInfo.stage == MaterialStage::Vertex)
-                    {
-                        encoder->setVertexBuffer(materialBuffer.get(), 0, materialInfo.bufferIndex);
-                    }
+                    auto pso = _pipelineStateObjects.at(psoName);
+                    rce.bind(pso.get());
+
+                    if (pso->config.culling == Front)
+                        encoder->setCullMode(MTL::CullModeFront);
                     else
+                        encoder->setCullMode(MTL::CullModeBack);
+
+                    bindGlobalMaterials(pso.get(), encoder, ringBuffer);
+                    bindGlobalTextures(psoName, encoder);
+
+                    for (const auto & item : items)
                     {
-                        encoder->setFragmentBuffer(materialBuffer.get(), 0, materialInfo.bufferIndex);
+                        bindInstanceMaterials(item.mID, pso.get(), encoder, ringBuffer);
+
+                        if (item.wireframe)
+                            encoder->setTriangleFillMode(MTL::TriangleFillMode::TriangleFillModeLines);
+                        else
+                            encoder->setTriangleFillMode(MTL::TriangleFillMode::TriangleFillModeFill);
+
+                        _renderables.at(item.rID)->render(
+                            &rce, 
+                            pso.get(), 
+                            1, 
+                            {item.gridSize.x, item.gridSize.y, item.gridSize.z}, 
+                            {item.threadgroupSize.x, item.threadgroupSize.y, item.threadgroupSize.z}
+                        );
                     }
                 }
-                for (const auto & renderable : renderables)
+            }
+
+            // IMMEDIATE
+            for (auto layer : _immediateRenderQueue.queue)
+            {
+                if (layer.empty()) continue;
+                for (auto& [psoName, items] : layer)
                 {
-                    renderable->render(&rce, viewProjectionMatrix);
+                    auto pso = _pipelineStateObjects.at(psoName);
+
+                    rce.bind(pso.get());
+
+                    if (pso->config.culling == Front)
+                        encoder->setCullMode(MTL::CullModeFront);
+                    else
+                        encoder->setCullMode(MTL::CullModeBack);
+
+                    bindGlobalMaterials(pso.get(), encoder, ringBuffer);
+                    bindGlobalTextures(psoName, encoder);
+
+                    for (const auto & item : items)
+                    {
+                        bindInstanceMaterials(item.mID, pso.get(), encoder, ringBuffer);
+
+                        if (item.wireframe)
+                            encoder->setTriangleFillMode(MTL::TriangleFillMode::TriangleFillModeLines);
+                        else
+                            encoder->setTriangleFillMode(MTL::TriangleFillMode::TriangleFillModeFill);
+
+                        _renderables.at(item.rID)->render(
+                            &rce, 
+                            pso.get(), 
+                            1, 
+                            {item.gridSize.x, item.gridSize.y, item.gridSize.z}, 
+                            {item.threadgroupSize.x, item.threadgroupSize.y, item.threadgroupSize.z}
+                        );
+                    }
                 }
             }
         }
-
-
-        /*
-        // render the renderables
-        //std::cout << "Rendering " << _renderables.size() << " renderables." << std::endl;
-        for (const auto& renderable : _renderables[static_cast<int>(RenderLayer::BACKGROUND)] | std::views::values)
+        catch (std::exception& e)
         {
-            renderable->render(&rce, viewProjectionMatrix);
+            encoder->endEncoding();
+            std::cerr << e.what() << std::endl;
+            throw std::runtime_error(e.what());
         }
-        for (const auto& renderable : _renderables[static_cast<int>(RenderLayer::OPAQUE)] | std::views::values)
-        {
-            if (renderable->visible) renderable->render(&rce, viewProjectionMatrix);
-        }
-        encoder->setDepthStencilState(depthStencilStateTransparent.get());
-        for (const auto& renderable : _renderables[static_cast<int>(RenderLayer::TRANSPARENT)] | std::views::values)
-        {
-            if (renderable->visible) renderable->render(&rce, viewProjectionMatrix);
-        }
-        for (const auto& renderable : _renderables[static_cast<int>(RenderLayer::UI)] | std::views::values)
-        {
-            renderable->render(&rce, viewProjectionMatrix);
-        }
-        for (const auto& renderable : _renderables[static_cast<int>(RenderLayer::TEXT)] | std::views::values)
-        {
-            renderable->render(&rce, viewProjectionMatrix);
-        }
-        */
-
 
         try {
-            _debugUICallback();
+            if (_debugUICallback) {
+                _debugUICallback();
+            }
         } catch(std::exception& e) {
             encoder->endEncoding();
             throw std::runtime_error(e.what());
@@ -282,11 +362,196 @@ namespace Rendering::Metal
         ImGui::Render();
         ImGui_ImplMetal_RenderDrawData(ImGui::GetDrawData(), buffer, encoder);
 
-
         encoder->endEncoding();
+
+
+        /*
+        // Depth visualization pass
+        auto secondPassDescriptor = NS::TransferPtr(MTL::RenderPassDescriptor::alloc()->init());
+        secondPassDescriptor->colorAttachments()->object(0)->setTexture(_drawable->texture());
+        secondPassDescriptor->colorAttachments()->object(0)->setLoadAction(MTL::LoadAction::LoadActionLoad);
+        secondPassDescriptor->colorAttachments()->object(0)->setStoreAction(MTL::StoreAction::StoreActionStore);
+        auto secondEncoder = buffer->renderCommandEncoder(secondPassDescriptor.get());
+
+        // DRAW DEPTH MAP
+        try
+        {
+            // draw depth map
+            auto mesh = Mesh::quad({0.0f, 0.0f, 1, 1}, 0.1, {0.0f, 0.0f, 0.0f, 1.0f}, 1.0, 1.0);
+            auto renderable = addRenderable(*mesh, {}, true);
+            auto material = addDefaultInstanceMaterial("Depth", true);
+            static_cast<Renderable*>(_renderables.at(renderable).get())->setMetalTexture({shadowPassDepthTexture}, {ShadowMap});
+            setInstanceMaterial(material, getBytes(glm::vec4{0.0f, 0.0f, 200.0f, 200.0f}), MaterialType::RECT);
+
+            // set global materials
+            auto pso = _pipelineStateObjects.at("Depth");
+            bindGlobalMaterials(pso.get(), secondEncoder, ringBuffer);
+            bindInstanceMaterials(material, pso.get(), secondEncoder, ringBuffer);
+            auto r = _renderables.at(renderable);
+            auto secondRce = CommandEncoder(secondEncoder);
+            secondRce.bind(pso.get());
+            _renderables.at(renderable)->render(&secondRce, pso.get());
+        }
+        catch (std::exception& e)
+        {
+            secondEncoder->endEncoding();
+            std::cerr << e.what() << std::endl;
+            throw std::runtime_error(e.what());
+        }
+
+        secondEncoder->endEncoding();
+        */
+
 
         buffer->presentDrawable(_drawable);
         buffer->commit();
+
+        // clear immediate data
+        for (auto& id : _immediateInstanceMaterials)
+        {
+            removeInstanceMaterial(id);
+        }
+        for (auto& id : _immediateRenderables)
+        {
+            removeRenderable(id);
+        }
+        _immediateInstanceMaterials.clear();
+        _immediateRenderables.clear();
+        _immediateRenderQueue.clear();
+    }
+
+    void Renderer::compute(
+        const std::string& psoName,
+        const std::vector<std::shared_ptr<Core::Texture>>& inputTextures,
+        const std::vector<std::shared_ptr<Core::Texture>>& outputTextures,
+        const std::vector<std::pair<MaterialType, std::vector<std::byte>>>& materials,
+        glm::ivec3 grid, glm::ivec3 threadgroup)
+    {
+        if (!_pipelineStateObjects.contains(psoName))
+        {
+            throw std::runtime_error("PSO not found: " + psoName);
+        }
+        auto pso = _pipelineStateObjects.at(psoName);
+        auto computePSO = dynamic_cast<ComputePSO*>(pso.get());
+        if (!computePSO)
+        {
+            throw std::runtime_error("PSO is not a ComputePSO: " + psoName);
+        }
+
+        auto pool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
+        static const auto queue = NS::TransferPtr(_device->newCommandQueue());
+        const auto buffer = queue->commandBuffer();
+
+        const auto encoder = buffer->computeCommandEncoder();
+        encoder->setComputePipelineState(static_cast<MTL::ComputePipelineState*>(computePSO->raw()));
+
+        // Bind materials
+        static auto ringBuffer = RingBuffer(_device.get());
+        ringBuffer.beginFrame();
+        
+        for (auto mat : computePSO->config.instanceMaterials) {
+            auto type = mat.type;
+            for (int i = 0; i < materials.size(); i++) {
+                if (materials[i].first == type) {
+                    auto offset = ringBuffer.write(materials[i].second);
+                    encoder->setBuffer(ringBuffer.buffer.get(), offset, mat.bufferIndex);
+                }
+            }
+        }
+        /*
+        for (int i = 0; i < materials.size(); ++i)
+        {
+            auto offset = ringBuffer.write(materials[i].second);
+            encoder->setBuffer(ringBuffer.buffer.get(), offset, i);
+        }*/
+
+        // Helper to convert/get MTL::Texture
+        auto getMTLTexture = [&](const std::shared_ptr<Core::Texture>& tex) -> MTL::Texture* {
+            // Search in _textures if we have an ID for this texture
+            // For simplicity in this compute call, we create/update a managed texture.
+            
+            MTL::TextureDescriptor* desc = MTL::TextureDescriptor::alloc()->init();
+            desc->setWidth(tex->width());
+            desc->setHeight(tex->height());
+            
+            // Handle different pixel formats
+            if (tex->format() == Core::RGBA32F) {
+                desc->setPixelFormat(MTL::PixelFormatRGBA32Float);
+            } else if (tex->format() == Core::R32F) {
+                desc->setPixelFormat(MTL::PixelFormatR32Float);
+            } else {
+                desc->setPixelFormat(MTL::PixelFormatRGBA8Unorm);
+            }
+            
+            desc->setUsage(MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite | MTL::TextureUsageRenderTarget);
+            desc->setStorageMode(MTL::StorageModeShared);
+            
+            auto mtlTex = _device->newTexture(desc);
+            desc->release();
+            
+            if (!tex->getData().empty()) {
+                size_t bytesPerRow = tex->width() * tex->bytesPerPixel();
+                mtlTex->replaceRegion(MTL::Region(0, 0, tex->width(), tex->height()), 0, tex->getData().data(), bytesPerRow);
+            }
+            return mtlTex;
+        };
+
+        for (int i = 0; i < inputTextures.size(); ++i)
+        {
+            auto mtlTex = getMTLTexture(inputTextures[i]);
+            encoder->setTexture(mtlTex, i);
+            mtlTex->release(); // If created new
+        }
+        
+        std::vector<MTL::Texture*> mtlOutputTextures;
+        for (int i = 0; i < outputTextures.size(); ++i)
+        {
+            auto mtlTex = getMTLTexture(outputTextures[i]);
+            encoder->setTexture(mtlTex, i + inputTextures.size());
+            mtlOutputTextures.push_back(mtlTex);
+        }
+
+        // Metal recommends calculating the grid size based on texture dimensions
+        // and using a threadgroup size that is a multiple of execution width (32 for Metal)
+        MTL::Size gridSize = MTL::Size(grid.x, grid.y, grid.z);
+        MTL::Size threadgroupSize = MTL::Size(threadgroup.x, threadgroup.y, threadgroup.z);
+        
+        // Use dispatchThreads for simpler automatic grid management
+        encoder->dispatchThreads(gridSize, threadgroupSize);
+
+        encoder->endEncoding();
+        buffer->commit();
+        buffer->waitUntilCompleted();
+        
+        // Copy back results to Core::Texture
+        for (int i = 0; i < outputTextures.size(); ++i) {
+            auto tex = outputTextures[i];
+            auto mtlTex = mtlOutputTextures[i];
+            size_t bytesPerRow = tex->width() * tex->bytesPerPixel();
+            
+            // Ensure data vector is correctly sized
+            tex->updateData(std::vector<uint8_t>(tex->height() * bytesPerRow));
+            mtlTex->getBytes(tex->getData().data(), bytesPerRow, MTL::Region(0, 0, tex->width(), tex->height()), 0);
+
+            // Debug: check if data is all zeros
+            if (tex->format() == Core::RGBA32F || tex->format() == Core::R32F) {
+                const float* floatData = (const float*)tex->getData().data();
+                bool allZeros = true;
+                size_t numFloats = tex->getData().size() / sizeof(float);
+                for(size_t j=0; j < numFloats; ++j) {
+                    if(floatData[j] != 0.0f) {
+                        allZeros = false;
+                        break;
+                    }
+                }
+                if(allZeros) {
+                    std::cout << "WARNING: Texture " << tex->type() << " is ALL ZEROS after compute!" << std::endl;
+                } else {
+                    std::cout << "Texture " << tex->type() << " generated successfully (non-zero)." << std::endl;
+                }
+            }
+            mtlTex->release();
+        }
     }
 
     Renderer::~Renderer()
@@ -296,17 +561,5 @@ namespace Rendering::Metal
         SDL_DestroyRenderer(_sdl_renderer);
         std::cout << "SDL_DestroyRenderer call ended" << std::endl;
     }
-
-
-    /*
-    glm::mat4x4 Renderer::getProjectionMatrix() const
-    {
-        return glm::perspective(
-            glm::radians(55.0f),
-            (_aspect[2] * static_cast<float>(_drawableSize[0])) / (_aspect[3] * static_cast<float>(_drawableSize[1])),
-            0.1f,
-            1000.0f);
-    }
-    */
 }
 
