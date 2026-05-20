@@ -3,7 +3,9 @@
 //
 
 
-#include "Rendering/EvolvingPlanetsApp.hpp"
+//#if COMPILE_EVOLVING_PLANETS_APP == 1
+
+#include "EvolvingPlanetsApp.hpp"
 
 #include "App.hpp"
 #include "PreCompileSettings.hpp"
@@ -68,7 +70,7 @@ void EvolvingPlanetsApp::init()
     std::srand(static_cast<unsigned int>(std::time(nullptr)));
     std::cout << "app::init()" << std::endl;
 
-    // load a mesh from file and add it to the renderer
+    // load a Geometry::Mesh from file and add it to the renderer
     auto meshLoader = std::make_unique<AssimpMeshLoader>();
 
 
@@ -90,7 +92,7 @@ void EvolvingPlanetsApp::init()
             {0.1f, 0.1f, 0.2f, 1.0f}
         }, 2);
     */
-    _renderer->setAmbientGlobalLight({0.2f, 0.2f, 0.2f, 1.0f});
+    //_renderer->setAmbientGlobalLight({0.2f, 0.2f, 0.2f, 1.0f});
 
 }
 
@@ -100,18 +102,38 @@ void EvolvingPlanetsApp::init()
 // refer to the renderer, for example to change the state of a renderable object.
 void EvolvingPlanetsApp::run()
 {
+    bool showPlanetDebug = false;
+    static bool useConstantLOD_UI = false;
+    static int constantLOD_UI = 6;
+    static bool showMesh_UI = true;
+    static bool isRocky_UI = false;
+    static int fractalOctaves_UI = 16;
+    static float fractalIntensity_UI = 5.0f;
+    static float fractalScale_UI = 3.5f;
+    static float normalDelta_UI = 0.0001f;
+    static bool useRockyTexture_UI = false;
+    static bool usePositionTexture_UI = true;
+    static bool useNormalTexture_UI = true;
+    static bool useSimplexNoise_UI = false;
+    static bool useTriplanar_UI = true;
     glm::vec4 viewport = {1.0f/3.0f, 0.0f, 2.0f/3.0f, 3.0f/4.0f};
     // set up camera
     auto camera = TrackballCamera();
     camera.zoom(10.0f);
 
     auto meshLoader = std::make_unique<AssimpMeshLoader>();
+    auto icoMesh = meshLoader->loadMesh(Apple::resourcePath("ico.obj"));
     auto controlPointMesh = meshLoader->loadMesh(Apple::resourcePath("ico.fbx"));
 
     std::vector<uint64_t> parallelsAndMeridiansIDs = {};
     std::vector<uint64_t> meshIDs = {};
     std::vector<uint64_t> tubesIDs = {};
     std::vector<uint64_t> sticksIDs = {};
+
+    uint64_t currentMeshRenderID = 0;
+    uint64_t currentMeshMaterialID = 0;
+    std::vector<std::pair<uint64_t, uint64_t>> cpRenderIDs = {};
+
     std::shared_ptr<Planet> planet;
 
     std::cout << "app::run()" << std::endl;
@@ -144,10 +166,13 @@ void EvolvingPlanetsApp::run()
     // that is should stop
     bool initShouldStop = false;
 
-    // current planet mesh being rendered
-    std::shared_ptr<Mesh> currentMesh;
+    // current planet Geometry::Mesh being rendered
+    std::shared_ptr<Geometry::Mesh> currentMesh;// = Geometry::Mesh::icosphere(3);
+    std::shared_ptr<Geometry::Mesh> meshShaderTestMesh = Geometry::Mesh::icosphere(3);
 
-    // Debug Ball mesh
+    std::vector<std::shared_ptr<Geometry::Mesh>> cpMeshes;
+
+    // Debug Ball Geometry::Mesh
 #if DEBUG_BALL
     auto ballMesh = meshLoader->loadMesh(Apple::resourcePath("ico.fbx"));
     auto ballMeshID = _renderer->addRenderable(
@@ -160,12 +185,17 @@ void EvolvingPlanetsApp::run()
     _renderer->setVisible(ballMeshID, false);
 #endif
 
+    // --- TEST Geometry::Mesh SHADER ---
+    //auto testMesh = Geometry::Mesh::icosphere(3);
+    auto meshPSO = Rendering::psoConfigs.at("TestMesh");
+    // Create a material instance for TestMesh
+
     // draw options -> parameters that are needed both by the ui and the rendering update that happens outside the
     // the ui callback
     float tessellationResolution = 0.03f;
     bool showControlPolyhedron = false;
     bool showMesh = true;
-    glm::vec4 meshColor = glm::vec4(0.1f, 0.1f, 0.1f, 1.0f);
+    glm::vec4 meshColor = glm::vec4(0.7f, 0.7f, 0.7f, 1.0f);
     bool normals = false;
     glm::vec4 normalColor = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f);
     float normalLength = 0.3f;
@@ -175,9 +205,28 @@ void EvolvingPlanetsApp::run()
     bool fitnessBasedColoringDiscrete = false;
     float fitnessBasedColoringDiscreteTreshold = 0.9f;
     bool wireframe = false;
-    glm::vec4 wireframeColor = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+    glm::vec4 wireframeColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
 
     bool shaded = true;
+    bool isRocky = false;
+    bool ico = false;
+    bool cube = false;
+    bool usePoissonDisk = false;
+    int icoSubdivisions = 4;
+    int cubeSubdivisions = 4;
+    int rockyFractalOctaves = 16;
+    float rockyFractalIntensity = 0.15f;
+    float rockyFractalScale = 1.0f;
+    float poissonMinDistance = 0.05f;
+
+    float radius = 2.0f;
+
+    std::vector<glm::vec3> x = {{0.0f, 0.0f, 0.0f}, {10000.0f, 0.0f, 0.0f}};
+    std::vector<glm::vec3> y = {{0.0f, 0.0f, 0.0f}, {0.0f, 10000.0f, 0.0f}};
+    std::vector<glm::vec3> z = {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 10000.0f}};
+    auto xMesh = Geometry::Mesh::fromPolygon(x, {1.0f, 0.0f, 0.0f, 1.0f}, false);
+    auto yMesh = Geometry::Mesh::fromPolygon(y, {0.0f, 1.0f, 0.0f, 1.0f}, false);
+    auto zMesh = Geometry::Mesh::fromPolygon(z, {0.0f, 0.0f, 1.0f, 1.0f}, false);
 
     // IMGUI DIALOG
     ImGui::FileBrowser fileDialog(ImGuiFileBrowserFlags_EnterNewFilename);
@@ -274,24 +323,27 @@ void EvolvingPlanetsApp::run()
         SDL_PumpEvents();
         int* length = nullptr;
         auto keyboardState = SDL_GetKeyboardState(length);
-        if (keyboardState[SDL_SCANCODE_UP]) camera.zoom(-12.0f * deltaTime);
-        if (keyboardState[SDL_SCANCODE_DOWN]) camera.zoom(12.0f * deltaTime);
+        auto cameraSpeed = 1.0f;
+        if (keyboardState[SDL_SCANCODE_SPACE]) cameraSpeed = 10.0f;
+        if (keyboardState[SDL_SCANCODE_UP]) camera.zoom(-12.0f * cameraSpeed * deltaTime);
+        if (keyboardState[SDL_SCANCODE_DOWN]) camera.zoom(12.0f * cameraSpeed * deltaTime);
 
         // UPDATE LIGHT
         // world.getComponent<DirectionalLightComponent>(directionalLight).light.direction = glm::inverse(camera.getViewMatrix()) * glm::vec4(0.0f, 0.0f, -1.0f, 0.0f);
-        _renderer->setDirectionalLight(
+        /*_renderer->setDirectionalLight(
         {
             -glm::inverse(camera.getViewMatrix()) * glm::vec4(0.0f, 0.0f, -1.0f, 0.0f),
             {0.5f, 0.5f, 0.5f, 1.0f}
-        }, 0);
+        }, 0);*/
 
         auto cameraDir = glm::inverse(camera.getViewMatrix()) * glm::vec4(0.0f, 0.0f, -1.0f, 0.0f);
-        std::cout << cameraDir.x << " " << cameraDir.y << " " << cameraDir.z << std::endl;
+        //std::cout << cameraDir.x << " " << cameraDir.y << " " << cameraDir.z << std::endl;
 
         // set debug ui callback: this function will be executed by the renderer inside its rendering loop
         // must be reset every frame in order to update its
-        _renderer->setDebugUICallback(
-            [&parallelsAndMeridiansIDs,
+        if (_renderer) {
+            _renderer->setDebugUICallback(
+                [&parallelsAndMeridiansIDs,
                 &meshIDs,
                 &tubesIDs,
                 &planet,
@@ -318,6 +370,7 @@ void EvolvingPlanetsApp::run()
                 &normalStep,
                 &shaded,
                 currentMesh,
+                &radius,
 #if DEBUF_BALL
                 ballMeshID,
 #endif
@@ -335,13 +388,12 @@ void EvolvingPlanetsApp::run()
                 &exportMeshesFuture,
                 &currentlyExportingMesh,
                 &exportMeshFuture,
-                &logFileDialog, camera
+                &logFileDialog, camera, &isRocky, &ico, &cube, &icoSubdivisions, &cubeSubdivisions, &rockyFractalOctaves, &rockyFractalIntensity, &rockyFractalScale, &usePoissonDisk, &poissonMinDistance, &showPlanetDebug
             ]()
             {
                 // STATIC VARIABLES (HANDLED BY UI)
                 static int nParallelsCP = 15;
                 static int nMeridiansCP = 14;
-                static float radius = 2.0f;
                 static float autointersectionStep = 0.03f;
                 static int nParallelsDrawn = 50;
                 static int nMeridiansDrawn = 50;
@@ -384,10 +436,36 @@ void EvolvingPlanetsApp::run()
                 ImGui::Begin("Drawing Options", 0, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
                 ImGui::PushItemWidth(150);
                 if (ImGui::Checkbox("Show Control Polyhedron", &showControlPolyhedron)) dirtyPlanets = true;
-                if (ImGui::Checkbox("Show Mesh", &showMesh)) dirtyPlanets = true;
+                if (ImGui::Checkbox("Show Mesh", &showMesh)) {}//dirtyPlanets = true;
                 //if (ImGui::ColorEdit4("mesh color", &meshColor[0])) dirtyPlanets = true;
-                if (ImGui::SliderFloat("tessellation step", &tessellationResolution, 0.01f, 0.1f, "%.2f")) dirtyPlanets = true;
-                if (ImGui::Checkbox("Wireframe", &wireframe)) dirtyPlanets = true;
+                //if (ImGui::SliderFloat("tessellation step", &tessellationResolution, 0.001f, 0.05f, "%.3f")) dirtyPlanets = true;
+                if (ImGui::Checkbox("Wireframe", &wireframe)) {}//dirtyPlanets = true;
+                //if (ImGui::Checkbox("Is Rocky", &isRocky)) dirtyPlanets = true;
+                //if (ImGui::Checkbox("Ico", &ico)) dirtyPlanets = true;
+                //if (ImGui::Checkbox("Cube", &cube)) dirtyPlanets = true;
+                //if (ImGui::Checkbox("Poisson Disk", &usePoissonDisk)) dirtyPlanets = true;
+                //if (ImGui::SliderInt("Ico Subdivisions", &icoSubdivisions, 0, 10)) dirtyPlanets = true;
+                //if (ImGui::SliderInt("Cube Subdivisions", &cubeSubdivisions, 0, 10)) dirtyPlanets = true;
+                //if (ImGui::SliderInt("Rocky Octaves", &rockyFractalOctaves, 0, 20)) dirtyPlanets = true;
+                //if (ImGui::SliderFloat("Rocky Intensity", &rockyFractalIntensity, 0.0f, 5.0f, "%.2f")) //dirtyPlanets = true;
+                //if (ImGui::SliderFloat("Rocky Scale", &rockyFractalScale, 0.1f, 10.0f, "%.2f")) dirtyPlanets = true;
+                //if (ImGui::SliderFloat("Poisson Min Distance", &poissonMinDistance, 0.01f, 0.2f, "%.3f")) dirtyPlanets = true;
+                if (ImGui::Checkbox("Use Constant LOD", &useConstantLOD_UI)) {}//dirtyPlanets = true;
+                if (ImGui::SliderInt("Constant LOD Value", &constantLOD_UI, 0, 12)) {}//dirtyPlanets = true;
+                if (ImGui::Checkbox("Show Mesh (Shader)", &showMesh_UI)) {}//dirtyPlanets = true;
+                if (ImGui::Checkbox("Is Rocky Mesh Shader", &isRocky_UI)) {}//dirtyPlanets = true;
+                if (isRocky_UI) {
+                    if (ImGui::Checkbox("Use Rocky Texture", &useRockyTexture_UI)) dirtyPlanets = true;
+                    if (ImGui::Checkbox("Use Simplex Noise", &useSimplexNoise_UI)) dirtyPlanets = true;
+                    if (ImGui::Checkbox("Use Triplanar Noise", &useTriplanar_UI)) {}//dirtyPlanets = true;
+                    if (ImGui::Checkbox("Use Position Texture", &usePositionTexture_UI)) dirtyPlanets = true;
+                    if (ImGui::Checkbox("Use Normal Texture", &useNormalTexture_UI)) dirtyPlanets = true;
+                    if (ImGui::SliderInt("Octaves", &fractalOctaves_UI, 1, 20)) {}//dirtyPlanets = true;
+                    if (ImGui::SliderFloat("Intensity", &fractalIntensity_UI, 0.0f, 10.0f)) {}//dirtyPlanets = true;
+                    if (ImGui::SliderFloat("Scale", &fractalScale_UI, 0.01f, 1.0f)) {}//dirtyPlanets = true;
+                    if (ImGui::SliderFloat("Normal Delta", &normalDelta_UI, 0.00001f, 0.0001f, "%.6f")) {}//dirtyPlanets = true;
+                }
+                //if (ImGui::Checkbox("Draw Planet Debug", &showPlanetDebug)) dirtyPlanets = true;
                 //if (ImGui::ColorEdit4("wireframe color", &wireframeColor[0])) dirtyPlanets = true;
                 /*
                 if (ImGui::Checkbox("Show Normals", &normals)) dirtyPlanets = true;
@@ -546,7 +624,7 @@ void EvolvingPlanetsApp::run()
                     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
                     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
                     if (ImGui::BeginPopupModal("Error", NULL, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove)) {
-                        ImGui::Text(errorPopupMessage.c_str());
+                        ImGui::Text("%s", errorPopupMessage.c_str());
                         if (ImGui::Button("Close")) {
                             showErrorPopup = false;
                             ImGui::CloseCurrentPopup();
@@ -610,7 +688,7 @@ void EvolvingPlanetsApp::run()
                                         while(ga->initialize()) {
                                             if (initShouldStop) return;
                                         };
-                                        // after initialization mark dirtyPlanets = true to trigger the meshes update
+                                        // after initialization mark dirtyPlanets = true to trigger the Meshes update
                                         dirtyPlanets = true;
                                     });
                                 }
@@ -779,12 +857,26 @@ void EvolvingPlanetsApp::run()
                 if (everyMeshFileDialog.IsOpened()) {
                     if (everyMeshFileDialog.HasSelected()) {
                         if (!exportMeshesFuture.valid() or (exportMeshesFuture.valid() and exportMeshesFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready)) {
-                            exportMeshesFuture = std::async([&currentlyExportingMesh, ga, &everyMeshFileDialog, &meshLoader](){
+                             exportMeshesFuture = std::async([&currentlyExportingMesh, ga, &everyMeshFileDialog, &meshLoader, isRocky, ico, cube, icoSubdivisions, cubeSubdivisions, rockyFractalOctaves, rockyFractalIntensity, rockyFractalScale, usePoissonDisk, poissonMinDistance](){
                                 showExportMeshesPopup = true;
                                 for (int i = 0; i < ga->population.size(); i++)
                                 {
                                     currentlyExportingMesh = i;
-                                    auto mesh = Mesh::fromPlanet(*ga->population[i]);
+                                    std::shared_ptr<Geometry::Mesh> mesh;
+                                     if (usePoissonDisk)
+                                         mesh = Geometry::Mesh::fromPlanetPD(*ga->population[i], poissonMinDistance, Geometry::Mesh::noVertexColor(), false);
+                                     else if (cube && isRocky)
+                                         mesh = Geometry::Mesh::fromCubePlanetRockyfied(*ga->population[i], cubeSubdivisions, Geometry::Mesh::noVertexColor(), false, rockyFractalOctaves, rockyFractalIntensity, rockyFractalScale);
+                                     else if (ico && isRocky)
+                                         mesh = Geometry::Mesh::fromIcoPlanetRockyfied(*ga->population[i], icoSubdivisions, Geometry::Mesh::noVertexColor(), false, rockyFractalOctaves, rockyFractalIntensity, rockyFractalScale);
+                                     else if (isRocky)
+                                         mesh = Geometry::Mesh::fromPlanetRockyfied(*ga->population[i], Geometry::Mesh::noVertexColor(), 0.01f, false, rockyFractalOctaves, rockyFractalIntensity);
+                                     else if (cube)
+                                         mesh = Geometry::Mesh::fromCubePlanet(*ga->population[i], cubeSubdivisions);
+                                     else if (ico)
+                                         mesh = Geometry::Mesh::fromIcoPlanet(*ga->population[i], icoSubdivisions);
+                                     else
+                                         mesh = Geometry::Mesh::fromPlanet(*ga->population[i]);
                                     auto path = everyMeshFileDialog.GetSelected().string();
                                     path += "_" + std::to_string(i) + ".obj";
                                     meshLoader->saveMesh(path, mesh);
@@ -819,29 +911,45 @@ void EvolvingPlanetsApp::run()
                 }
             });
 
-        // UPDATE MESHES
+        // UPDATE Geometry::MeshES
         if (ga and ga->hasInitialized() and dirtyPlanets)// and !looping)
         {
+            // Remove previous renderables
+            if (currentMeshRenderID != 0) {
+                _renderer->removeRenderable(currentMeshRenderID);
+                currentMeshRenderID = 0;
+            }
+            if (currentMeshMaterialID != 0) {
+                _renderer->removeInstanceMaterial(currentMeshMaterialID);
+                currentMeshMaterialID = 0;
+            }
+            for (auto& ids : cpRenderIDs) {
+                _renderer->removeRenderable(ids.first);
+                _renderer->removeInstanceMaterial(ids.second);
+            }
+            cpRenderIDs.clear();
+
             for (auto& id: meshIDs)
             {
                 _renderer->removeRenderable(id);
             }
             meshIDs.clear();
+
             if (showMesh)
             {
                 std::uint64_t ids;
 
                 if (!wireframe)
                 {
-                    auto pso = shaded ? "VCPHONG_W" : "PC";
-                    auto bvhPso = "curve";
+                    //auto pso = shaded ? "VCPHONG" : "PC";
+                    //auto bvhPso = "curve";
                     if (curvatureBasedColoring)
                     {
-                        currentMesh = Mesh::fromPlanetGaussCurvatureColor(*ga->population[currentPlanet], glm::vec4(0.0f, 0.0f, 0.0f, 1.0f), glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
+                        currentMesh = Geometry::Mesh::fromPlanetGaussCurvatureColor(*ga->population[currentPlanet], glm::vec4(0.0f, 0.0f, 0.0f, 1.0f), glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
                     }
                     else if (fitnessBasedColoring)
                     {
-                        currentMesh = Mesh::fromPlanetFitnessColor(
+                        currentMesh = Geometry::Mesh::fromPlanetFitnessColor(
                             *ga->population[currentPlanet],
                             glm::vec4(1.0f, 0.0f, 0.0f, 1.0f),
                             glm::vec4(0.0f, 1.0f, 0.0f, 1.0f),
@@ -851,73 +959,120 @@ void EvolvingPlanetsApp::run()
                     }
                     else
                     {
-                        currentMesh = Mesh::fromPlanet(*ga->population[currentPlanet], meshColor, tessellationResolution);
+                        if (usePoissonDisk) {
+                            currentMesh = Geometry::Mesh::fromPlanetPD(*ga->population[currentPlanet], poissonMinDistance, meshColor, false);
+                        }
+                        else if (cube && isRocky) {
+                            currentMesh = Geometry::Mesh::fromCubePlanetRockyfied(*ga->population[currentPlanet], cubeSubdivisions, meshColor, false, rockyFractalOctaves, rockyFractalIntensity, rockyFractalScale);
+                        }
+                        else if (ico && isRocky) {
+                            currentMesh = Geometry::Mesh::fromIcoPlanetRockyfied(*ga->population[currentPlanet], icoSubdivisions, meshColor, false, rockyFractalOctaves, rockyFractalIntensity, rockyFractalScale);
+                        }
+                        else if (isRocky) {
+                            currentMesh = Geometry::Mesh::fromPlanetRockyfied(*ga->population[currentPlanet], meshColor, tessellationResolution, false, rockyFractalOctaves, rockyFractalIntensity);
+                        } else if (cube) {
+                            currentMesh = Geometry::Mesh::fromCubePlanet(*ga->population[currentPlanet], cubeSubdivisions, meshColor);
+                        } else if (ico) {
+                            currentMesh = Geometry::Mesh::fromIcoPlanet(*ga->population[currentPlanet], icoSubdivisions, meshColor);
+                        } else {
+                            currentMesh = Geometry::Mesh::fromPlanet(*ga->population[currentPlanet], meshColor, tessellationResolution);
+                        }
                     }
-                    ids = _renderer->addRenderable(
-                                              *currentMesh,
-                                              Rendering::psoConfigs.at(pso),
-                                              {},
-                                              Rendering::RenderLayer::OPAQUE);
-                    _renderer->setWireframe(ids, wireframe);
                 }
                 else
                 {
-                    currentMesh = Mesh::fromPlanet(*ga->population[currentPlanet], wireframeColor, tessellationResolution);
-                    ids = _renderer->addRenderable(
-                                              *currentMesh,
-                                              Rendering::psoConfigs.at("PC"),
-                                              {},
-                                              Rendering::RenderLayer::OPAQUE);
-                    _renderer->setWireframe(ids, wireframe);
+                    if (usePoissonDisk) {
+                        currentMesh = Geometry::Mesh::fromPlanetPD(*ga->population[currentPlanet], poissonMinDistance, meshColor, false);
+                    }
+                    else if (cube && isRocky) {
+                        currentMesh = Geometry::Mesh::fromCubePlanetRockyfied(*ga->population[currentPlanet], cubeSubdivisions, meshColor, false, rockyFractalOctaves, rockyFractalIntensity, rockyFractalScale);
+                    }
+                    else if (ico && isRocky) {
+                        currentMesh = Geometry::Mesh::fromIcoPlanetRockyfied(*ga->population[currentPlanet], icoSubdivisions, meshColor, false, rockyFractalOctaves, rockyFractalIntensity, rockyFractalScale);
+                    }
+                    else if (isRocky) {
+                        currentMesh = Geometry::Mesh::fromPlanetRockyfied(*ga->population[currentPlanet], meshColor, tessellationResolution, false, rockyFractalOctaves, rockyFractalIntensity);
+                    } else if (cube) {
+                        currentMesh = Geometry::Mesh::fromCubePlanet(*ga->population[currentPlanet], cubeSubdivisions, meshColor);
+                    } else if (ico) {
+                        currentMesh = Geometry::Mesh::fromIcoPlanet(*ga->population[currentPlanet], icoSubdivisions, meshColor);
+                    } else {
+                        currentMesh = Geometry::Mesh::fromPlanet(*ga->population[currentPlanet], meshColor, tessellationResolution);
+                    }
+                }
+
+                if (currentMesh) {
+                    currentMeshRenderID = _renderer->addRenderable(*currentMesh, {});
+                    auto pso = shaded ? "VCWARD" : "Unlit";
+                    currentMeshMaterialID = _renderer->addDefaultInstanceMaterial(pso);
+                    _renderer->setInstanceMaterial(currentMeshMaterialID, getBytes(0.25f), ROUGHNESS);
                 }
 
 #if SHOW_BVH
                 auto bvh = BVH(currentMesh->getVertices(), currentMesh->getFacesData(), 16);
                 auto bvhLines = bvh.getLines();
-                auto bvhMesh = Mesh::fromPolygon(bvhLines, glm::vec4(1.0f, 0.0f, 1.0f, 1.0f), false);
+                auto bvhMesh = Geometry::Mesh::fromPolygon(bvhLines, glm::vec4(1.0f, 0.0f, 1.0f, 1.0f), false);
                 auto bvhId = _renderer->addRenderable(*bvhMesh, Rendering::psoConfigs.at("curve"), {}, Rendering::RenderLayer::OPAQUE);
                 meshIDs.push_back(bvhId);
 #endif
 
-                meshIDs.push_back(ids);
+                //meshIDs.push_back(ids);
             }
 
             // draw normal sticks
             if (normals)
             {
+                /*
                 auto normalSticks = ga->population[currentPlanet]->normalSticks(normalLength, normalStep);
-                auto sticksMesh = Mesh::fromPolygon(normalSticks, normalColor, false);
+                auto sticksMesh = Geometry::Mesh::fromPolygon(normalSticks, normalColor, false);
                 auto ids = _renderer->addRenderable(
                                                          *sticksMesh,
                                                          Rendering::psoConfigs.at("curve"), {},
                                                          Rendering::RenderLayer::OPAQUE
                                                          );
                 meshIDs.push_back(ids);
+                */
             }
             // draw control polyhedron
             if (showControlPolyhedron)
             {
+                cpMeshes.clear();
                 for (const auto & i : ga->population[currentPlanet]->parallelsCP())
                 {
-                    auto meshCP = Mesh::fromPolygon(i, glm::vec4(0.0f, 0.0f, 1.0f, 1.0f), true);
-                    meshIDs.push_back(_renderer->addRenderable(
-                                                         *meshCP,
-                                                         Rendering::psoConfigs.at("curve"), {},
-                                                         Rendering::RenderLayer::OPAQUE
-                                                         ));
+                    auto mesh = Geometry::Mesh::fromPolygon(i, glm::vec4(0.0f, 0.0f, 1.0f, 1.0f), true);
+                    auto rID = _renderer->addRenderable(*mesh, {});
+                    auto mID = _renderer->addDefaultInstanceMaterial("curve");
+                    cpRenderIDs.push_back({rID, mID});
+                    cpMeshes.push_back(mesh);
                 }
                 // draw meridians
                 for (int i = 0; i < ga->population[currentPlanet]->meridiansCP().size(); i++)
                 {
-                    auto meshCP = Mesh::fromPolygon(ga->population[currentPlanet]->meridiansCP()[i], glm::vec4(0.0f, 0.0f, 1.0f, 1.0f), true);
-                    meshIDs.push_back(_renderer->addRenderable(
-                                                         *meshCP,
-                                                         Rendering::psoConfigs.at("curve"), {},
-                                                         Rendering::RenderLayer::OPAQUE
-                                                         ));
+                    auto mesh = Geometry::Mesh::fromPolygon(ga->population[currentPlanet]->meridiansCP()[i], glm::vec4(0.0f, 0.0f, 1.0f, 1.0f), true);
+                    auto rID = _renderer->addRenderable(*mesh, {});
+                    auto mID = _renderer->addDefaultInstanceMaterial("curve");
+                    cpRenderIDs.push_back({rID, mID});
+                    cpMeshes.push_back(mesh);
                 }
             }
-            dirtyPlanets = false;
+            else
+            {
+                cpMeshes.clear();
+            }
+        }
+
+        RenderQueue renderQueue;
+
+        if (currentMeshRenderID != 0 && showMesh)
+        {
+            auto pso = shaded ? "VCWARD" : "Unlit";
+            renderQueue.add(RenderItem(currentMeshRenderID, currentMeshMaterialID, false, wireframe), pso, Rendering::RenderLayer::OPAQUE);
+        }
+
+        if (showControlPolyhedron) {
+            for (auto& ids : cpRenderIDs) {
+                renderQueue.add(RenderItem(ids.first, ids.second, false, false), "curve", Rendering::RenderLayer::OPAQUE);
+            }
         }
 
         // LOOPING ON SECOND THREAD
@@ -943,14 +1098,215 @@ void EvolvingPlanetsApp::run()
         }
 
 
-        // RENDERING UPDATE
+        const int trianglesPerMeshlet = 32;
+        int numMeshlets = (meshShaderTestMesh->getNumFaces() + trianglesPerMeshlet - 1) / trianglesPerMeshlet;
+        if (numMeshlets == 0) numMeshlets = 1;
+
+        /*
+        _renderer->iDraw(
+            *meshShaderTestMesh,
+            {},
+            "TestMesh",
+            {}, false, wireframe,
+            numMeshlets, 1, 1,
+            32, 1, 1
+            );
+            */
+
+        // Dynamic Procedural Icosphere with Object & Mesh Shaders
+        std::vector<std::pair<MaterialType, std::vector<std::byte>>> icosphereMaterials;
+
+        // Update current planet data if it exists
+        std::shared_ptr<Planet> activePlanet = nullptr;
+        if (ga && ga->hasInitialized() && !ga->population.empty()) {
+            activePlanet = ga->population[currentPlanet];
+        }
+
+        if (activePlanet) {
+            auto cp = activePlanet->parallelsCP();
+            if (!cp.empty() && !cp[0].empty()) {
+                std::vector<glm::vec3> flatCP;
+                for (auto& row : cp) {
+                    for (auto& p : row) flatCP.push_back(p);
+                }
+
+                std::vector<std::byte> cpBytes(flatCP.size() * sizeof(glm::vec3));
+                std::memcpy(cpBytes.data(), flatCP.data(), cpBytes.size());
+                //icosphereMaterials.push_back({PLANET_CP, cpBytes});
+
+                auto knotsU = activePlanet->knotsU();
+                std::vector<std::byte> kuBytes(knotsU.size() * sizeof(int));
+                std::memcpy(kuBytes.data(), knotsU.data(), kuBytes.size());
+                //icosphereMaterials.push_back({PLANET_KNOTS_U, kuBytes});
+
+                auto knotsV = activePlanet->knotsV();
+                std::vector<std::byte> kvBytes(knotsV.size() * sizeof(int));
+                std::memcpy(kvBytes.data(), knotsV.data(), kvBytes.size());
+                //icosphereMaterials.push_back({PLANET_KNOTS_V, kvBytes});
+
+                PlanetInfoMaterial info;
+                info.degreeU = activePlanet->degreeU();
+                info.degreeV = activePlanet->degreeV();
+                info.nCP_U = cp[0].size();
+                info.nCP_V = cp.size();
+                info.planetRadius = radius; // Default radius for icosphere
+                info.usePositionTexture = usePositionTexture_UI;
+                info.useNormalTexture = useNormalTexture_UI;
+                info.constantLOD = constantLOD_UI;
+                info.useConstantLOD = useConstantLOD_UI;
+                info.showMesh = showMesh_UI;
+                info.isRocky = isRocky_UI;
+                info.fractalOctaves = fractalOctaves_UI;
+                info.fractalIntensity = fractalIntensity_UI;
+                info.fractalScale = fractalScale_UI;
+                info.useRockyTexture = useRockyTexture_UI;
+                //icosphereMaterials.push_back({PLANET_INFO, getBytes(info)});
+
+                CompactPlanetInfoMaterial cinfo;
+                cinfo.fractalIntensity = fractalIntensity_UI;
+                cinfo.fractalScale = fractalScale_UI;
+                cinfo.planetRadius = radius;
+                icosphereMaterials.push_back({COMPACT_PLANET_INFO, getBytes(cinfo)});
+
+                // ADD PLANET TEXTURE
+                static std::shared_ptr<Core::Texture> planetTex = nullptr;
+                static std::shared_ptr<Core::Texture> planetNormalTex = nullptr;
+                
+                if (planetTex == nullptr && usePositionTexture_UI) planetTex = activePlanet->toTexture(512, 512);
+                if (planetNormalTex == nullptr && useNormalTexture_UI) planetNormalTex = activePlanet->toNormalTexture(512, 512);
+
+                static std::shared_ptr<Core::Texture> rockyTexTL = nullptr;
+                static std::shared_ptr<Core::Texture> rockyTexTR = nullptr;
+                static std::shared_ptr<Core::Texture> rockyTexBL = nullptr;
+                static std::shared_ptr<Core::Texture> rockyTexBR = nullptr;
+
+                static uint64_t planetRenderableID = 0;
+                static uint64_t planetMaterialID = 0;
+
+                if (dirtyPlanets) {
+                    auto size = 512;
+                    if (usePositionTexture_UI) planetTex = activePlanet->toTexture(size, size);
+                    else planetTex = nullptr;
+                    
+                    if (useNormalTexture_UI) planetNormalTex = activePlanet->toNormalTexture(size, size);
+                    else planetNormalTex = nullptr;
+                    
+                    if (useRockyTexture_UI) {
+                        std::cout << "[DEBUG] Generating rocky textures (4x 16k) via GPU kernel..." << std::endl;
+
+                        auto w = 16384 / 4;
+                        rockyTexTL = std::make_shared<Core::Texture>(std::vector<uint8_t>(w * w * sizeof(float), 0), w, w, Core::R32F, sizeof(float), Core::RockyNoise_TL);
+                        rockyTexTR = std::make_shared<Core::Texture>(std::vector<uint8_t>(w * w * sizeof(float), 0), w, w, Core::R32F, sizeof(float), Core::RockyNoise_TR);
+                        rockyTexBL = std::make_shared<Core::Texture>(std::vector<uint8_t>(w * w * sizeof(float), 0), w, w, Core::R32F, sizeof(float), Core::RockyNoise_BL);
+                        rockyTexBR = std::make_shared<Core::Texture>(std::vector<uint8_t>(w * w * sizeof(float), 0), w, w, Core::R32F, sizeof(float), Core::RockyNoise_BR);
+                        auto generateQuadrant = [&](std::shared_ptr<Core::Texture> tex, int qX, int qY) {
+                            PlanetInfoMaterial qInfo = info;
+                            qInfo.quadrantX = qX;
+                            qInfo.quadrantY = qY;
+                            _renderer->compute(
+                                "RockyTextureGenerator",
+                                {},
+                                {rockyTexTL, rockyTexTR, rockyTexBL, rockyTexBR},
+                                {
+                                    {PLANET_INFO, getBytes(qInfo)},
+                                    {PLANET_CP, cpBytes},
+                                    {PLANET_KNOTS_U, kuBytes},
+                                    {PLANET_KNOTS_V, kvBytes}
+                                },
+                                {w, w, 1},
+                                {32, 32, 1}
+                            );
+                        };
+
+                        generateQuadrant(rockyTexTL, 0, 0);
+                        generateQuadrant(rockyTexTR, 1, 0);
+                        generateQuadrant(rockyTexBL, 0, 1);
+                        generateQuadrant(rockyTexBR, 1, 1);
+                    }
+                    else
+                    {
+                        rockyTexTL = nullptr;
+                        rockyTexTR = nullptr;
+                        rockyTexBL = nullptr;
+                        rockyTexBR = nullptr;
+                    }
+                    if (planetRenderableID != 0) {
+                        _renderer->removeRenderable(planetRenderableID);
+                        std::vector<std::shared_ptr<Core::Texture>> textures;
+                        if (planetTex) textures.push_back(planetTex);
+                        if (planetNormalTex) textures.push_back(planetNormalTex);
+                        if (useRockyTexture_UI) {
+                            textures.push_back(rockyTexTL);
+                            textures.push_back(rockyTexTR);
+                            textures.push_back(rockyTexBL);
+                            textures.push_back(rockyTexBR);
+                        }
+                        planetRenderableID = _renderer->addRenderable(
+                            *meshShaderTestMesh,
+                            textures
+                            );
+                    }
+                }
+
+                if (planetRenderableID == 0) {
+                    std::vector<std::shared_ptr<Core::Texture>> textures;
+                    if (planetTex) textures.push_back(planetTex);
+                    if (planetNormalTex) textures.push_back(planetNormalTex);
+                    if (useRockyTexture_UI) {
+                        textures.push_back(rockyTexTL);
+                        textures.push_back(rockyTexTR);
+                        textures.push_back(rockyTexBL);
+                        textures.push_back(rockyTexBR);
+                    }
+                    planetRenderableID = _renderer->addRenderable(*meshShaderTestMesh, textures);
+                }
+                if (planetMaterialID == 0) {
+                    //planetMaterialID = _renderer->addDefaultInstanceMaterial("DynamicIcosphere");
+                    planetMaterialID = _renderer->addDefaultInstanceMaterial("PlanetShader");
+                }
+
+                // update materials
+                for (const auto& mat : icosphereMaterials) {
+                    _renderer->setInstanceMaterial(planetMaterialID, mat.second, mat.first);
+                }
+                renderQueue.add(RenderItem(planetRenderableID, planetMaterialID, false, wireframe, {5120, 1, 1}, {64, 1, 1}), "PlanetShader", Rendering::RenderLayer::OPAQUE);
+                //renderQueue.add(RenderItem(planetRenderableID, planetMaterialID, false, wireframe, 5120, 1, 1, 64, 1, 1), "DynamicIcosphere", Rendering::RenderLayer::OPAQUE);
+            }
+        }
+
+        // DRAW AXES
+        if (xMesh) _renderer->iDraw(*xMesh, {}, "curve", {});
+        if (yMesh) _renderer->iDraw(*yMesh, {}, "curve", {});
+        if (zMesh) _renderer->iDraw(*zMesh, {}, "curve", {});
+
+        //_renderer->iDraw(*icoMesh, {}, "VCWARD", {});
+
+        // set global materials
+        Lights lights;
+        lights.globalAmbientLightColor = glm::vec4(0.5f, 0.5f, 0.5f, 1.0f);
+        lights.numDirectionalLights = 1;
+        auto lightDirection = glm::inverse(camera.getViewMatrix()) * glm::vec4(0.0f, 0.0f, -1.0f, 0.0f);
+        lights.directionalLights[0].direction = lightDirection;
+        lights.directionalLights[0].color = glm::vec4(2.0f, 2.0f, 2.0f, 1.0f);
+        _renderer->setGlobalMaterial(getBytes(lights), LIGHTS);
+
+        _renderer->setGlobalMaterial(getBytes(camera.getViewMatrix()), VIEW_MATRIX);
+        _renderer->setGlobalMaterial(getBytes(glm::vec4(camera.getPosition(), 1.0f)), CAMERA_POSITION);
+
         auto drawableSize = _renderer->getDrawableSize();
         auto aspectRatio = drawableSize[0] * viewport[2] / (drawableSize[1] * viewport[3]);
-        auto projectionMatrix = glm::perspective(
-                    glm::radians(55.0f), aspectRatio, 0.1f, 1000.0f
+        auto projectionMatrix = glm::perspectiveRH_ZO(
+                    glm::radians(65.0f), aspectRatio, 0.1f, 1000.0f
             );
-        _renderer->update(camera.getViewMatrix(), projectionMatrix, viewport);
+        _renderer->setGlobalMaterial(getBytes(projectionMatrix), PROJECTION_MATRIX);
+        _renderer->setGlobalMaterial(getBytes(projectionMatrix * camera.getViewMatrix()), VIEW_PROJECTION_MATRIX);
+
+        dirtyPlanets = false;
+        _renderer->update(renderQueue, viewport);
+    }
     }
     SDL_DestroyWindow(_window);
     std::cout << "Exiting from app::run()" << std::endl;
 }
+
+//#endif
