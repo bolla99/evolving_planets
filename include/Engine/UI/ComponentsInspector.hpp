@@ -10,9 +10,12 @@
 #include <unordered_map>
 #include <vector>
 
-#include <Engine/World.hpp>
-#include <Engine/Components.hpp>
-#include <Engine/Systems.hpp>
+#include <Engine/ECS/World.hpp>
+#include <Engine/ECS/Components.hpp>
+#include <Engine/ECS/Systems.hpp>
+#include "Planet.hpp"
+
+#include <imgui.h>
 
 struct ComponentsInspector
 {
@@ -61,20 +64,32 @@ struct ComponentsInspector
     static ComponentsInspector factory()
     {
         auto ci = ComponentsInspector();
+        /*
         ci.registerComponent<NameComponent>([](World& world, Context& ctx, EntityID entity, NameComponent& name)
         {
-            if (!ImGui::CollapsingHeader("Name"))
+            if (ImGui::CollapsingHeader("Name"))
             {
                 ImGui::Text("Name: %s", name.name.c_str());
             }
         });
+        */
         ci.registerComponent<Transform>([](World& world, Context& ctx, EntityID entity, Transform& transform)
         {
             if (ImGui::CollapsingHeader("Transform"))
             {
-                ImGui::InputFloat3("Position", glm::value_ptr(transform.position));
-                ImGui::InputFloat3("Rotation", glm::value_ptr(transform.rotation));
-                ImGui::InputFloat3("Scale", glm::value_ptr(transform.scale));
+                auto positionChanged = ImGui::InputFloat3("Position", glm::value_ptr(transform.position));
+                auto eulers = glm::vec3(glm::degrees(glm::eulerAngles(transform.rotation)));
+                auto rotationChanged = ImGui::InputFloat3("Rotation", glm::value_ptr(eulers));
+                transform.rotation = glm::quat(glm::radians(eulers));
+                auto scaleChanged = ImGui::InputFloat3("Scale", glm::value_ptr(transform.scale));
+                if (positionChanged || rotationChanged || scaleChanged)
+                {
+                    if (world.hasComponent<RigidBodyComponent>(entity))
+                    {
+                        auto& rb = world.getComponent<RigidBodyComponent>(entity);
+                        rb.teleport(transform.position, transform.rotation);
+                    }
+                }
             }
         });
         ci.registerComponent<TintMaterialComponent>([](World& world, Context& ctx, EntityID entity, TintMaterialComponent& tint)
@@ -93,6 +108,7 @@ struct ComponentsInspector
             if (ImGui::CollapsingHeader("Point Light"))
             {
                 ImGui::InputFloat3("Color", glm::value_ptr(plc.light.color));
+                ImGui::SliderFloat("Intensity: ", &plc.intensity, 0.0f, 10.0f);
             }
         });
         ci.registerComponent<DirectionalLightComponent>([](World& world, Context& ctx, EntityID entity, DirectionalLightComponent& dlc)
@@ -101,6 +117,7 @@ struct ComponentsInspector
             {
                 ImGui::InputFloat3("Color", glm::value_ptr(dlc.light.color));
                 ImGui::InputFloat3("Base Direction", glm::value_ptr(dlc.light.direction));
+                ImGui::SliderFloat("Intensity: ", &dlc.intensity, 0.0f, 10.0f);
             }
         });
         ci.registerComponent<MeshComponent>([](World& world, Context& ctx, EntityID entity, MeshComponent& mesh)
@@ -115,8 +132,20 @@ struct ComponentsInspector
         {
             if (ImGui::CollapsingHeader("Render Config"))
             {
+                static int currentPSO = 0;
+                auto psoStrings = std::vector<const char*>();
+                for (const auto& [name, config] : Rendering::psoConfigs)
+                {
+                    if (renderConf.psoName == name) currentPSO = psoStrings.size();
+                    psoStrings.push_back(const_cast<char*>(name.c_str()));
+                }
+                ImGui::Combo("pso", &currentPSO, psoStrings.data(), psoStrings.size());
+                renderConf.psoName = psoStrings[currentPSO];
                 ImGui::Text("PSO: %s", renderConf.psoName.c_str());
                 ImGui::Text("Layer: %d", renderConf.layer);
+                ImGui::Checkbox("Visible", &renderConf.visible);
+                ImGui::Checkbox("Wireframe", &renderConf.wireframe);
+                ImGui::Checkbox("Cast Shadow", &renderConf.castShadow);
             }
         });
         ci.registerComponent<ViewportComponent>([](World& world, Context& ctx, EntityID entity, ViewportComponent& viewport)
@@ -182,6 +211,111 @@ struct ComponentsInspector
             {
                 ImGui::Text("Viewport Width: %f", viewportSize.material.width);
                 ImGui::Text("Viewport Height: %f", viewportSize.material.height);
+            }
+        });
+        ci.registerComponent<MaterialComponent>([](World& world, Context& ctx, EntityID entity, MaterialComponent& material)
+        {
+            if (ImGui::CollapsingHeader("Material"))
+            {
+                ImGui::Text("Material ID: %d", material.id);
+            }
+        });
+
+        ci.registerComponent<ShininessMaterialComponent>([](World& world, Context& ctx, EntityID entity, ShininessMaterialComponent& material)
+        {
+            if (ImGui::CollapsingHeader("Shininess Material"))
+            {
+                ImGui::InputFloat("Shininess", &material.shininess);
+            }
+        });
+
+        ci.registerComponent<BoundingSphereComponent>([](World& world, Context& ctx, EntityID entity, BoundingSphereComponent& sphere)
+        {
+            if (ImGui::CollapsingHeader("Bounding Sphere"))
+            {
+                ImGui::Text("Bounding Sphere Center: %f, %f, %f", sphere.center.x, sphere.center.y, sphere.center.z);
+                ImGui::Text("Bounding Sphere Radius: %f", sphere.radius);
+            }
+        });
+
+        ci.registerComponent<AmbientLightComponent>([](World& world, Context& ctx, EntityID entity, AmbientLightComponent& alc)
+        {
+            if (ImGui::CollapsingHeader("Ambient Light"))
+            {
+                ImGui::InputFloat3("Color", glm::value_ptr(alc.light));
+            }
+        });
+
+        ci.registerComponent<WardMaterialComponent>([](World& world, Context& ctx, EntityID entity, WardMaterialComponent& material)
+        {
+            if (ImGui::CollapsingHeader("Ward Material"))
+            {
+                ImGui::SliderFloat("roughness", &material.roughness, 0.0f, 1.0f);
+                ImGui::SliderFloat("metallic", &material.metallic, 0.0f, 1.0f);
+            }
+        });
+        ci.registerComponent<RigidBodyComponent>([](World& world, Context& ctx, EntityID entity, RigidBodyComponent& rb)
+        {
+            if (ImGui::CollapsingHeader("Rigid Body"))
+            {
+                ImGui::Text("Mass: %f", rb.mass);
+                auto active = rb.active;
+                if (ImGui::Checkbox("Active", &active))
+                {
+                    rb.setActive(active);
+                }
+                ImGui::Text("Is Kinematic: %s", rb.isKinematic ? "true" : "false");
+            }
+        });
+
+        ci.registerComponent<PlanetConfigComponent>([](World& world, Context& ctx, EntityID entity, PlanetConfigComponent& config)
+        {
+            if (ImGui::CollapsingHeader("Planet Config"))
+            {
+                if (ImGui::InputInt("Parallels", &config.nParallels)) {}
+                if (ImGui::InputInt("Meridians", &config.nMeridians)) {}
+                if (ImGui::InputFloat("Base Radius", &config.baseRadius)) {}
+                if (ImGui::InputInt("Mutations", &config.nMutations)) {}
+                if (ImGui::InputInt("Texture Size", &config.textureSize)) {}
+                if (ImGui::Button("Regenerate")) config.isDirty = true;
+            }
+        });
+
+        ci.registerComponent<PlanetDataComponent>([](World& world, Context& ctx, EntityID entity, PlanetDataComponent& data)
+        {
+            if (ImGui::CollapsingHeader("Planet Data"))
+            {
+                if (data.planet) {
+                    ImGui::Text("Degree U: %d", data.planet->degreeU());
+                    ImGui::Text("Degree V: %d", data.planet->degreeV());
+                    ImGui::Text("CP Count: %zu", data.planet->controlPoints().size());
+                } else {
+                    ImGui::Text("No Planet Instance");
+                }
+            }
+        });
+
+        ci.registerComponent<PlanetInfoComponent>([](World& world, Context& ctx, EntityID entity, PlanetInfoComponent& matComp)
+        {
+            if (ImGui::CollapsingHeader("Planet Material"))
+            {
+                auto& mat = matComp.info;
+                ImGui::Text("Current Radius: %f", mat.planetRadius);
+                ImGui::InputFloat("Fractal Intensity", &mat.fractalIntensity);
+                ImGui::InputFloat("Fractal Scale", &mat.fractalScale);
+                bool useConstantLOD = mat.useConstantLOD != 0;
+                if (ImGui::Checkbox("Use Constant LOD", &useConstantLOD)) {
+                    mat.useConstantLOD = useConstantLOD ? 1 : 0;
+                }
+                ImGui::Text("Current LOD: %d", mat.constantLOD);
+            }
+        });
+
+        ci.registerComponent<TexturesComponent>([](World& world, Context& ctx, EntityID entity, TexturesComponent& matComp)
+        {
+            if (ImGui::CollapsingHeader("Textures Component"))
+            {
+                ImGui::Text("Number of Textures: %zu", matComp.textures.size());
             }
         });
         return ci;
