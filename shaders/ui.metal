@@ -31,7 +31,6 @@ vertex VertexOut vertexUI(
     vertexOut.position = float4(vertexIn.position, 1.0f);
     vertexOut.position.x = vertexOut.position.x / viewportSize.size.x * 2.0f - 1.0f;
     vertexOut.position.y = -vertexOut.position.y / viewportSize.size.y * 2.0f + 1.0f;
-    vertexOut.position.z = 0.9f;
     vertexOut.color = vertexIn.color;
     return vertexOut;
 }
