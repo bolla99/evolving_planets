@@ -43,7 +43,7 @@ namespace Rendering::Metal
                 device,
                 library,
                 std::make_unique<PSOFactory>(device.get(), library.get()),
-                std::make_unique<RenderableFactory>()
+                std::make_unique<RenderableFactory>(device.get())
             );
         }
     };

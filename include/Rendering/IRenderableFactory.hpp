@@ -15,9 +15,14 @@ namespace Rendering
     public:
         virtual ~IRenderableFactory() = default;
         virtual std::shared_ptr<IRenderable> fromMesh(
-            const Mesh& mesh,
-            std::shared_ptr<IPSO> pso,
+            const Geometry::Mesh& mesh,
             const std::vector<std::shared_ptr<Texture>>& textures
+            ) = 0;
+
+        virtual std::shared_ptr<IRenderable> createProceduralMeshRenderable(
+            const std::vector<std::shared_ptr<Texture>>& textures,
+            const IRenderable::DispatchSize& gridSize,
+            const IRenderable::DispatchSize& threadgroupSize
             ) = 0;
     };
 }

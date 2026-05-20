@@ -2,6 +2,10 @@
 // Created by Giovanni Bollati on 12/06/25.
 //
 
+//
+// Created by Giovanni Bollati on 12/06/25.
+//
+
 #ifndef IRENDERABLE_HPP
 #define IRENDERABLE_HPP
 
@@ -9,6 +13,9 @@
 #include "ICommandEncoder.hpp"
 #include "../Mesh.hpp"
 #include "glm/mat4x4.hpp"
+
+using namespace std;
+using namespace Core;
 
 namespace Rendering
 {
@@ -21,72 +28,67 @@ namespace Rendering
     class IRenderable
     {
     public:
+        IRenderable() = delete;
+        IRenderable(const IRenderable&) = delete;
+        IRenderable& operator=(const IRenderable&) = delete;
+        IRenderable(IRenderable&&) = delete;
+        IRenderable& operator=(IRenderable&&) = delete;
+
         // CONSTRUCTOR
         IRenderable(
-            std::shared_ptr<IPSO> pso,
             int verticesCount,
-            int facesCount
+            int facesCount,
+            const vector<vector<pair<VertexAttributeName, VertexAttributeType>>>& vertexAttributes,
+            const vector<TextureType>& texturesTypes
             ) :
-        _modelMatrix(glm::mat4x4(1.0f)), // identity matrix
-        _verticesCount(verticesCount),
-        _facesCount(facesCount)
-        {
-            // create materials
-            for (const auto& materialInfo : pso->materials)
-            {
-                if (materialInfo.frequency == PerFrame) continue;
-                _materialInfos.emplace_back(materialInfo);
-                _materials.emplace_back(getDefaultBytes(materialInfo.type));
-            }
-
-            _pso = std::move(pso);
-        }
+            _verticesCount(verticesCount),
+            _facesCount(facesCount),
+            _vertexAttributes(vertexAttributes),
+            _texturesTypes(texturesTypes),
+            _gridSize({0, 0, 0}),
+            _threadgroupSize({0, 0, 0})
+        {}
 
         // DESTRUCTOR
         virtual ~IRenderable() = default;
 
+        // Mesh shader dispatch dimensions
+        struct DispatchSize { uint32_t x, y, z; };
+
         // RENDER FUNCTION
-        virtual void render(ICommandEncoder* commandEncoder, const glm::mat4x4& viewProjectionMatrix) const = 0;
+        virtual void render(
+            ICommandEncoder* commandEncoder,
+            IPSO* pso,
+            uint instanceCount = 1,
+            DispatchSize gridSize = {0, 0, 0},
+            DispatchSize threadgroupSize = {0, 0, 0}
+        ) const = 0;
 
-        // METHODS
-        [[nodiscard]] glm::mat4x4 modelMatrix() const
+
+        // verify compatibiliy between a vertex descriptor and the vertex layout
+        // vertex descriptor is an object held by a pipeline state obejct
+        [[nodiscard]] bool isCompatible(const VertexDescriptor& vd) const;
+
+        void setDispatchDimensions(DispatchSize grid, DispatchSize threadgroup)
         {
-            return _modelMatrix;
+            _gridSize = grid;
+            _threadgroupSize = threadgroup;
         }
-        void modelMatrix(const glm::mat4x4& matrix)
-        {
-            _modelMatrix = matrix;
-        }
-
-        void setMaterial(const std::vector<std::byte>& materialBytes, MaterialType type)
-        {
-            for (int i = 0; i < _materials.size(); i++)
-            {
-                if (_materialInfos[i].type == type)
-                {
-                    auto def = getDefaultBytes(type);
-                    assert(def.size() == materialBytes.size() && "Material size mismatch");
-                    _materials[i] = materialBytes;
-                }
-            }
-        }
-
-        // PUBLIC FIELDS
-        bool visible = true;
-        bool wireframe = false;
-
-        std::shared_ptr<IPSO> _pso;
 
     protected:
         // PROTECTED FIELDS
-        glm::mat4x4 _modelMatrix;
-        int _verticesCount = 0;
-        int _facesCount = 0;
+        const int _verticesCount;
+        const int _facesCount;
 
-        std::vector<std::vector<std::byte>> _materials;
-        std::vector<MaterialInfo> _materialInfos;
+        // buffers metadata
+        // {buffer 1: attribute 1, attribute 2, ...; buffer 2: attribute 1, attribute 2 ...}
+        const vector<vector<pair<VertexAttributeName, VertexAttributeType>>> _vertexAttributes;
+        std::vector<TextureType> _texturesTypes;
+
+        // Mesh shader dispatch dimensions
+        DispatchSize _gridSize;
+        DispatchSize _threadgroupSize;
     };
 }
-
 
 #endif //IRENDERABLE_HPP

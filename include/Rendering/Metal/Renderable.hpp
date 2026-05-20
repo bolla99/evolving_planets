@@ -19,21 +19,38 @@ namespace Rendering::Metal
         Renderable(
             const std::vector<std::vector<float>>& data,
             const std::vector<uint32_t>& faces,
-            const std::vector<int>& bufferIndices,
-            const std::shared_ptr<PSO>& pso,
             int verticesCount,
             int facesCount,
-            const std::vector<std::shared_ptr<Texture>>& textures
+            const std::vector<std::shared_ptr<Texture>>& textures,
+            const std::vector<std::vector<std::pair<Core::VertexAttributeName, Core::VertexAttributeType>>>& vertexAttributes,
+            const std::vector<Core::TextureType>& texturesTypes,
+            MTL::Device* device
             );
 
-        void render(ICommandEncoder* commandEncoder, const glm::mat4x4& viewProjectionMatrix) const override;
+        // override render function
+        void render(
+            ICommandEncoder* commandEncoder,
+            IPSO* pso,
+            uint instanceCount,
+            DispatchSize gridSize = {0, 0, 0},
+            DispatchSize threadgroupSize = {0, 0, 0}
+        ) const override;
 
+        void setMetalTexture(const std::vector<NS::SharedPtr<MTL::Texture>>& texture, const std::vector<TextureType>& textureTypes)
+        {
+            _textures = texture;
+            _texturesTypes = textureTypes;
+        }
 
     private:
+        // metal data
         std::vector<NS::SharedPtr<MTL::Buffer>> _buffers;
         std::vector<NS::SharedPtr<MTL::Texture>> _textures;
         NS::SharedPtr<MTL::Buffer> _facesBuffer;
-        std::vector<int> _bufferIndices;
+
+        // Helper methods for rendering
+        void bindSamplers(MTL::RenderCommandEncoder* encoder, const std::vector<Core::SamplerDescriptor>& samplers) const;
+        void bindTextures(MTL::RenderCommandEncoder* encoder, const PSOConfig& config) const;
     };
 }
 
