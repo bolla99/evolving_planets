@@ -2,6 +2,7 @@
 // Created by Giovanni Bollati on 25/06/25.
 //
 
+/*
 #ifndef UIELEMENT_HPP
 #define UIELEMENT_HPP
 
@@ -61,3 +62,4 @@ namespace Rendering::UI
 }
 
 #endif //UIELEMENT_HPP
+*/

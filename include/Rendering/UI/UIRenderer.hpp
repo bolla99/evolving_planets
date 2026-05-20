@@ -1,7 +1,7 @@
 //
 // Created by Giovanni Bollati on 28/06/25.
 //
-
+/*
 #ifndef UIRENDERER_HPP
 #define UIRENDERER_HPP
 
@@ -67,3 +67,4 @@ namespace Rendering::UI
     };
 }
 #endif //UIRENDERER_HPP
+*/

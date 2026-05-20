@@ -2,6 +2,7 @@
 // Created by Giovanni Bollati on 25/06/25.
 //
 
+/*
 #ifndef UIWINDOW_HPP
 #define UIWINDOW_HPP
 #include <array>
@@ -70,3 +71,4 @@ namespace Rendering::UI
 }
 
 #endif //UIWINDOW_HPP
+*/

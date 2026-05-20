@@ -2,6 +2,7 @@
 // Created by Giovanni Bollati on 25/06/25.
 //
 
+/*
 #ifndef UILABEL_HPP
 #define UILABEL_HPP
 #include "glm/vec4.hpp"
@@ -61,3 +62,4 @@ namespace Rendering::UI
 }
 
 #endif //UILABEL_HPP
+*/
