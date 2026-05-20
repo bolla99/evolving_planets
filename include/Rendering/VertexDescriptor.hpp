@@ -40,6 +40,7 @@ namespace Rendering
 
         [[nodiscard]] bool isCompatibleWith(const VertexDescriptor& other) const;
         [[nodiscard]] bool validateVertexDescriptor() const;
+        [[nodiscard]] bool isInterleaved() const;
     };
 
     extern const std::unordered_map<std::string, const VertexDescriptor> G_getVertexDescriptors();

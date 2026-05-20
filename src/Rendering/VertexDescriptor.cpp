@@ -41,6 +41,16 @@ namespace Rendering
             }
         ),
             std::make_pair<std::string, const VertexDescriptor>(
+                "P", // {position, color} non interleaved
+                VertexDescriptor{
+                {
+                    {
+                        {Position, Float3, 0}
+                    }
+                }
+            }
+        ),
+            std::make_pair<std::string, const VertexDescriptor>(
                 "PCN", // {position, color, normal } non interleaved
                 VertexDescriptor{
                 {
@@ -149,4 +159,17 @@ namespace Rendering
         }
         return true;
     }
+
+    bool VertexDescriptor::isInterleaved() const
+    {
+        for (auto& buffer : buffers)
+        {
+            if (buffer.size() > 1)
+            {
+                return true; // interleaved vertex descriptor found
+            }
+        }
+        return false;
+    }
+
 }
