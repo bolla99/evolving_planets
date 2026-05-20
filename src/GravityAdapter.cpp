@@ -9,7 +9,7 @@
 
 namespace GravityAdapter
 {
-    GravityComputer::GravityComputer(const Mesh& mesh, int tubesResolution) : G(9.81f)
+    GravityComputer::GravityComputer(const Geometry::Mesh& mesh, int tubesResolution) : G(9.81f)
     {
         float tubesR;
         auto vertices = mesh.getAttributeData(Core::Position);

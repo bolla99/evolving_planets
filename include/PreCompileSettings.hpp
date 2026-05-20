@@ -7,7 +7,9 @@
 
 
 // 0: evolving planets; 1: rtgp app
-#define APP 0
+#define APP 1
+
+#define COMPILE_EVOLVING_PLANETS_APP 1
 
 // evolving planets macros
 #define DEBUG_BALL 0

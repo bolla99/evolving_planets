@@ -5,7 +5,7 @@
 #define MTL_PRIVATE_IMPLEMENTATION
 
 #include "App.hpp"
-#include "Rendering/EvolvingPlanetsApp.hpp"
+#include "../include/EvolvingPlanetsApp.hpp"
 #include "PreCompileSettings.hpp"
 #include "RTGPApp.hpp"
 
