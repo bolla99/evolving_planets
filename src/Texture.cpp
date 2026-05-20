@@ -9,23 +9,29 @@
 #include <string>
 #include <SDL_ttf.h>
 #include <simd/packed.h>
+#include <glm/glm.hpp>
 
 #include "Apple/Util.hpp"
+
+using namespace Core;
 
 Texture::Texture(
         const std::vector<uint8_t>& data,
         size_t width,
         size_t height,
         PixelFormat format,
-        size_t bytesPerPixel
+        size_t bytesPerPixel,
+        TextureType type
         ) :   _data(data),
               _width(width),
               _height(height),
               _format(format),
-              _bytesPerPixel(bytesPerPixel) {}
+              _bytesPerPixel(bytesPerPixel),
+              _type(type)
+{}
 
 
-std::shared_ptr<Texture> Texture::fromFile(const std::string& filePath)
+std::shared_ptr<Texture> Texture::fromFile(const std::string& filePath, TextureType type)
 {
     int width, height, channels;
     auto data = stbi_load(filePath.c_str(), &width, &height, &channels, 0);
@@ -47,7 +53,8 @@ std::shared_ptr<Texture> Texture::fromFile(const std::string& filePath)
             static_cast<size_t>(width),
             static_cast<size_t>(height),
             format,
-            channels
+            channels,
+            type
         );
         stbi_image_free(data);
         return texture;
@@ -89,8 +96,64 @@ std::shared_ptr<Texture> Texture::fromText(const std::string& text, int fontSize
         static_cast<size_t>(surface->w),
         static_cast<size_t>(surface->h),
         RGBA8,
-        4
+        4,
+        TextureType::Text
     );
     SDL_FreeSurface(surface);
     return texture;
+}
+
+std::shared_ptr<Texture> Texture::fromColor(const glm::vec4& color)
+{
+    auto r = static_cast<uint8_t>(255.0f * color.x);
+    auto g = static_cast<uint8_t>(255.0f * color.y);
+    auto b = static_cast<uint8_t>(255.0f * color.z);
+    return std::make_shared<Texture>(std::vector<uint8_t>{r, g, b, 255}, 1, 1, RGBA8, 1, TextureType::Diffuse);
+}
+
+glm::vec4 Texture::sample(float u, float v) const
+{
+    if (_data.empty()) return glm::vec4(0.0f);
+
+    // Gestione coordinate (wrap repeat)
+    u = u - std::floor(u);
+    v = v - std::floor(v);
+
+    float fx = u * (float)(_width);
+    float fy = v * (float)(_height);
+
+    int x0 = (int)std::floor(fx) % (int)_width;
+    int y0 = (int)std::floor(fy) % (int)_height;
+    int x1 = (x0 + 1) % (int)_width;
+    int y1 = (y0 + 1) % (int)_height;
+
+    float dx = fx - std::floor(fx);
+    float dy = fy - std::floor(fy);
+
+    auto getPixel = [&](int x, int y) -> glm::vec4 {
+        size_t index = (y * _width + x) * _bytesPerPixel;
+        if (index + _bytesPerPixel > _data.size()) return glm::vec4(0.0f);
+
+        if (_format == RGBA32F || _format == R32F) {
+            const float* p = reinterpret_cast<const float*>(&_data[index]);
+            if (_format == RGBA32F) return glm::vec4(p[0], p[1], p[2], p[3]);
+            else return glm::vec4(p[0], 0.0f, 0.0f, 1.0f);
+        } else {
+            const uint8_t* p = &_data[index];
+            if (_format == RGBA8) return glm::vec4(p[0], p[1], p[2], p[3]) / 255.0f;
+            else if (_format == RGB8) return glm::vec4(p[0], p[1], p[2], 255.0f) / 255.0f;
+            else if (_format == R8) return glm::vec4(p[0], 0.0f, 0.0f, 255.0f) / 255.0f;
+        }
+        return glm::vec4(0.0f);
+    };
+
+    glm::vec4 p00 = getPixel(x0, y0);
+    glm::vec4 p10 = getPixel(x1, y0);
+    glm::vec4 p01 = getPixel(x0, y1);
+    glm::vec4 p11 = getPixel(x1, y1);
+
+    glm::vec4 p0 = glm::mix(p00, p10, dx);
+    glm::vec4 p1 = glm::mix(p01, p11, dx);
+
+    return glm::mix(p0, p1, dy);
 }
