@@ -1,9 +1,9 @@
 //
-// Created by Giovanni Bollati on 12/06/25.
+// Created by Giovanni Bollati on 21/04/26.
 //
 
-#ifndef METALPSO_HPP
-#define METALPSO_HPP
+#ifndef MESHPSO_HPP
+#define MESHPSO_HPP
 
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
@@ -13,27 +13,29 @@
 
 namespace Rendering::Metal
 {
-    class PSO : public IPSO
+    class MeshPSO : public IPSO
     {
     public:
-        PSO(
+        MeshPSO(
             const PSOConfig& config,
             MTL::Device* device,
             MTL::Library* library
-            );
+        );
 
         // override
         [[nodiscard]] void* raw() const override { return _metalPSO.get(); }
 
         // observer functions
-        [[nodiscard]] MTL::Function* getVertexFunction() const { return _vertexF.get(); }
+        [[nodiscard]] MTL::Function* getObjectFunction() const { return _objectF.get(); }
+        [[nodiscard]] MTL::Function* getMeshFunction() const { return _meshF.get(); }
         [[nodiscard]] MTL::Function* getFragmentFunction() const { return _fragmentF.get(); }
 
     private:
         NS::SharedPtr<MTL::RenderPipelineState> _metalPSO;
-        NS::SharedPtr<MTL::Function> _vertexF;
+        NS::SharedPtr<MTL::Function> _objectF;
+        NS::SharedPtr<MTL::Function> _meshF;
         NS::SharedPtr<MTL::Function> _fragmentF;
     };
 }
 
-#endif //METALPSO_HPP
+#endif //MESHPSO_HPP

@@ -7,6 +7,8 @@
 #include "../IPSO.hpp"
 #include "../IPSOFactory.hpp"
 #include "PSO.hpp"
+#include "MeshPSO.hpp"
+#include "ComputePSO.hpp"
 #include "../PSOConfigs.hpp"
 #include "../../Metal/MTLDevice.hpp"
 
@@ -20,13 +22,18 @@ namespace Rendering::Metal
         {}
         std::shared_ptr<IPSO> create(const PSOConfig& config) override
         {
-            return std::make_shared<PSO>
-            (
-                config,
-                _device,
-                _library,
-                MTL::PixelFormatBGRA8Unorm // Example pixel format
-            );
+            if (config.pipelineType == PipelineType::Mesh)
+            {
+                return std::make_shared<MeshPSO>(config, _device, _library);
+            }
+            else if (config.pipelineType == PipelineType::Compute)
+            {
+                return std::make_shared<ComputePSO>(config, _device, _library);
+            }
+            else
+            {
+                return std::make_shared<PSO>(config, _device, _library);
+            }
         }
 
     private:

@@ -8,6 +8,7 @@
 #include <string>
 #include "VertexDescriptor.hpp"
 #include "Material.hpp"
+#include "Texture.hpp"
 
 namespace Rendering
 {
@@ -33,17 +34,45 @@ namespace Rendering
         Disabled
     };
 
+    enum ColorPixelFormat
+    {
+        BGRAUnorm,
+        ColorInvalid
+    };
+    enum DepthPixelFormat
+    {
+        Depth32Float,
+        DepthInvalid
+    };
+
+    enum class PipelineType
+    {
+        Vertex,
+        Mesh,
+        Compute
+    };
+
     struct PSOConfig
     {
         std::string name;
-        std::string vertexShader;
-        std::string fragmentShader;
+        PipelineType pipelineType = PipelineType::Vertex;
+        std::string vertexShader;      // For Vertex: vertex shader, For Mesh: object shader (optional)
+        std::string fragmentShader;    // For Vertex: fragment shader, For Mesh: mesh shader
+        std::string meshFragmentShader; // For Mesh: actual fragment shader
         PrimitiveType primitiveType;
         FillMode fillMode;
         Culling culling;
         DepthTest depthTest;
+        ColorPixelFormat colorPixelFormat;
+        DepthPixelFormat depthPixelFormat;
         VertexDescriptor vertexDescriptor;
-        std::vector<MaterialInfo> materials;
+        std::vector<MaterialInfo> instanceMaterials;
+        std::vector<MaterialInfo> globalMaterials;
+        std::vector<Core::TextureDescriptor> instanceTextures;
+        std::vector<Core::TextureDescriptor> globalTextures;
+        std::vector<Core::SamplerDescriptor> samplers;
+        int indexBufferSlot = -1;
+        int sampleCount = 4;
     };
 
     extern const std::unordered_map<std::string, const PSOConfig> psoConfigs;

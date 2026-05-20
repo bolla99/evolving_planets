@@ -12,8 +12,7 @@ namespace Rendering::Metal
     PSO::PSO(
         const PSOConfig& config,
         MTL::Device* device,
-        MTL::Library* library,
-        MTL::PixelFormat pixelFormat
+        MTL::Library* library
         ) : IPSO(config)
     {
         _vertexF = NS::TransferPtr(library->newFunction(
@@ -40,19 +39,47 @@ namespace Rendering::Metal
         psoDescriptor->setLabel(NS::String::string(config.name.c_str(), NS::ASCIIStringEncoding));
         psoDescriptor->setVertexFunction(_vertexF.get());
         psoDescriptor->setFragmentFunction(_fragmentF.get());
-        psoDescriptor->colorAttachments()->object(0)->setPixelFormat(pixelFormat);
 
-        psoDescriptor->setDepthAttachmentPixelFormat(MTL::PixelFormat::PixelFormatDepth32Float);
+        // color attachment
+        switch (config.colorPixelFormat)
+        {
+        case BGRAUnorm:
+            psoDescriptor->colorAttachments()->object(0)->setPixelFormat(MTL::PixelFormatBGRA8Unorm);
+            break;
+        case ColorInvalid:
+            psoDescriptor->colorAttachments()->object(0)->setPixelFormat(MTL::PixelFormat::PixelFormatInvalid);
+            break;
+        }
 
-        psoDescriptor->colorAttachments()->object(0)->setBlendingEnabled(YES);
-        psoDescriptor->colorAttachments()->object(0)->setRgbBlendOperation(MTL::BlendOperationAdd);
-        psoDescriptor->colorAttachments()->object(0)->setAlphaBlendOperation(MTL::BlendOperationAdd);
-        psoDescriptor->colorAttachments()->object(0)->setSourceRGBBlendFactor(MTL::BlendFactorSourceAlpha);
-        psoDescriptor->colorAttachments()->object(0)->setDestinationRGBBlendFactor(MTL::BlendFactorOneMinusSourceAlpha);
-        psoDescriptor->colorAttachments()->object(0)->setSourceAlphaBlendFactor(MTL::BlendFactorSourceAlpha);
-        psoDescriptor->colorAttachments()->object(0)->setDestinationAlphaBlendFactor(MTL::BlendFactorOneMinusSourceAlpha);
-        psoDescriptor->setSampleCount(1); // default sample count, can be changed later
+        if (config.depthTest == Enabled)
+        {
+            psoDescriptor->setDepthAttachmentPixelFormat(MTL::PixelFormat::PixelFormatDepth32Float);
+        }
+        else
+        {
+            psoDescriptor->setDepthAttachmentPixelFormat(MTL::PixelFormat::PixelFormatInvalid);
+        }
 
+        if (config.colorPixelFormat != ColorInvalid)
+        {
+            psoDescriptor->colorAttachments()->object(0)->setBlendingEnabled(YES);
+            psoDescriptor->colorAttachments()->object(0)->setRgbBlendOperation(MTL::BlendOperationAdd);
+            psoDescriptor->colorAttachments()->object(0)->setAlphaBlendOperation(MTL::BlendOperationAdd);
+            psoDescriptor->colorAttachments()->object(0)->setSourceRGBBlendFactor(MTL::BlendFactorSourceAlpha);
+            psoDescriptor->colorAttachments()->object(0)->setDestinationRGBBlendFactor(MTL::BlendFactorOneMinusSourceAlpha);
+            psoDescriptor->colorAttachments()->object(0)->setSourceAlphaBlendFactor(MTL::BlendFactorSourceAlpha);
+            psoDescriptor->colorAttachments()->object(0)->setDestinationAlphaBlendFactor(MTL::BlendFactorOneMinusSourceAlpha);
+        }
+        psoDescriptor->setSampleCount(config.sampleCount);
+
+        switch (config.primitiveType)
+        {
+            case Triangle:
+                psoDescriptor->setInputPrimitiveTopology(MTL::PrimitiveTopologyClass::PrimitiveTopologyClassTriangle);
+                break;
+            case Line:
+                psoDescriptor->setInputPrimitiveTopology(MTL::PrimitiveTopologyClass::PrimitiveTopologyClassLine);
+        }
 
         NS::Error* error;
         _metalPSO = NS::TransferPtr(device->newRenderPipelineState(psoDescriptor.get(), &error));

@@ -14,18 +14,9 @@ namespace Rendering
     public:
         explicit IPSO(
             const PSOConfig& config
-            ) :
-        _vertexDescriptor(config.vertexDescriptor),
-        primitiveType(config.primitiveType),
-        fillMode(config.fillMode),
-        culling(config.culling),
-        depthTest(config.depthTest),
-        name(config.name),
-        vertexShader(config.vertexShader),
-        fragmentShader(config.fragmentShader),
-        materials(config.materials)
+            ) : config(config)
         {
-            if (!_vertexDescriptor.validateVertexDescriptor())
+            if (!config.vertexDescriptor.validateVertexDescriptor())
             {
                 throw std::runtime_error("Invalid vertex descriptor");
             }
@@ -33,30 +24,15 @@ namespace Rendering
 
         // virtual destructor for polymorphism
         virtual ~IPSO() = default;
-        // delete copy
+
         IPSO(const IPSO&) = delete;
         IPSO& operator=(const IPSO&) = delete;
-        // delete move
         IPSO(IPSO&&) = delete;
         IPSO& operator=(IPSO&&) = delete;
 
         [[nodiscard]] virtual void* raw() const = 0;
-        [[nodiscard]] const VertexDescriptor& getVertexDescriptor() const
-        {
-            return _vertexDescriptor;
-        }
 
-        const PrimitiveType primitiveType;
-        const FillMode fillMode;
-        const Culling culling;
-        const DepthTest depthTest;
-        const std::string name;
-        const std::string vertexShader;
-        const std::string fragmentShader;
-        const std::vector<MaterialInfo> materials;
-
-    private:
-        const VertexDescriptor& _vertexDescriptor;
+        const PSOConfig config;
     };
 }
 
