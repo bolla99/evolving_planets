@@ -8,6 +8,7 @@
 #include <metal_stdlib>
 #include <metal_geometric>
 #include <metal_matrix>
+#include <bvh.hpp>
 
 using namespace metal;
 
@@ -378,7 +379,7 @@ static inline float4 applyFULLSHADOWWARDLights(
                 for(int y = -1; y <= 1; ++y) {
                     float2 offset = float2(x, y) * texelSize;
                     float pcfDepth = shadowMaps.sample(textureSampler, shadowUV + offset, i);
-                    shadowAccum += (currentDepth > pcfDepth + 0.005f) ? 0.0 : 1.0;
+                    shadowAccum += (currentDepth > pcfDepth + 0.001f) ? 0.0 : 1.0;
                 }
             }
                 
@@ -506,7 +507,11 @@ static inline float4 applyFULLSHADOWWARDLightsWithOrenNayar(
                         constant PointShadowData& pointShadowData,
                         depth2d_array<float> shadowMaps,
                         depthcube_array<float> cubeMaps,
-                        sampler textureSampler
+                        sampler textureSampler,
+                        float hbao,
+                        constant BVHNode* bvhNodes,
+                        constant Triangle* bvhPrimitives,
+                        int useRayTracedShadow
                    ) {
     float3 baseColor = color.xyz;
     
@@ -539,8 +544,18 @@ static inline float4 applyFULLSHADOWWARDLightsWithOrenNayar(
         float dotNL = dot(L, N);
         if (dotNL <= 0) continue;
         
+        // APPLY FORCE SHADOW
+        if (useRayTracedShadow > 0 and intersect((worldPosition + normal * 1.0).xyz, L, bvhNodes, bvhPrimitives)) continue;
+        
+        //if (hbao < 0.96) break;
+        
         // APPLY SHADOW
-        float4 lightSpacePos = shadowData.viewProjectionMatrix[i] * worldPosition;
+        // Sposta la posizione del frammento leggermente verso l'esterno lungo la normale della superficie
+        // per "sollevare" matematicamente il calcolo sopra lo spessore del gradino della shadow map
+        float3 biasedWorldPos = worldPosition.xyz + normal.xyz * 1.0f;
+
+        // Ricalcola le coordinate di campionamento shadowUV e la currentDepth usando biasedWorldPos...
+        float4 lightSpacePos = shadowData.viewProjectionMatrix[i] * float4(biasedWorldPos, 1.0);
         float3 ndc = lightSpacePos.xyz / lightSpacePos.w;
 
         float2 shadowUV;
@@ -550,30 +565,41 @@ static inline float4 applyFULLSHADOWWARDLightsWithOrenNayar(
         float currentDepth = ndc.z;
     
         float shadowFactor = 1.0f;
+        
+        bool usePCF = true;
+        // Bias dinamico basato sull'inclinazione per evitare shadow acne
+        float bias = 0.002f * clamp(1.0 - dotNL, 0.0, 1.0);
+        
         if (shadowUV.x > 0.0 and shadowUV.x < 1.0 and
             shadowUV.y > 0.0 and shadowUV.y < 1.0 and
-              currentDepth > 0.0 and currentDepth < 1.0) {
-            /*
-            float shadowMapDepth = shadowMaps.sample(textureSampler, shadowUV, i);
-            if (currentDepth > shadowMapDepth + 0.001f) continue;
-             */
-            float shadowAccum = 0.0;
+            currentDepth > 0.0 and currentDepth < 1.0) {
+        
+            
+            if (usePCF) {
+                float shadowAccum = 0.0;
                 
-            // Calcola la dimensione di un singolo texel nella shadow map
-            // Se la tua texture è 1024x1024, il texel è 1.0/1024.0
-            float texelSize = 1.0 / 1024.0;
-
+                // Calcola la dimensione di un singolo texel nella shadow map
+                // Se la tua texture è 1024x1024, il texel è 1.0/1024.0
+                float texelSize = 1.0 / 4096.0;
+                
                 // Loop PCF 3x3
-            for(int x = -1; x <= 1; ++x) {
-                for(int y = -1; y <= 1; ++y) {
-                    float2 offset = float2(x, y) * texelSize;
-                    float pcfDepth = shadowMaps.sample(textureSampler, shadowUV + offset, i);
-                    shadowAccum += (currentDepth > pcfDepth + 0.005f) ? 0.0 : 1.0;
+                for(int x = -1; x <= 1; ++x) {
+                    for(int y = -1; y <= 1; ++y) {
+                        float2 offset = float2(x, y) * texelSize;
+                        float pcfDepth = shadowMaps.sample(textureSampler, shadowUV + offset, i);
+                        shadowAccum += (currentDepth > pcfDepth + bias) ? 0.0 : 1.0;
+                    }
+                }
+                
+                // Fai la media dei 9 campionamenti
+                shadowFactor = shadowAccum / 9.0;
+            } else {
+                
+                float shadowMapDepth = shadowMaps.sample(textureSampler, shadowUV, i);
+                if (currentDepth > shadowMapDepth + bias) {
+                    continue;
                 }
             }
-                
-            // Fai la media dei 9 campionamenti
-            shadowFactor = shadowAccum / 9.0;
         }
         
         // DIFFUSE

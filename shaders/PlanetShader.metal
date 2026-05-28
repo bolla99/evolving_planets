@@ -1,6 +1,8 @@
 #include <metal_stdlib>
 #include "Lighting.hpp"
 #include "util.hpp"
+#include "bvh.hpp"
+
 using namespace metal;
 
 struct Payload {
@@ -23,6 +25,12 @@ struct CompactPlanetInfo {
     float fractalScale;
     int useConstantLOD;
     int constantLOD;
+    int useHBAO;
+    int octaves;
+    float deltaMultiplier;
+    float minDelta;
+    float maxDelta;
+    int useRayTracingShadows;
 };
 
 
@@ -69,24 +77,26 @@ uint calculateLOD(float3 v0, float3 v1, float3 v2, float4x4 modelMatrix, float3 
     float screenRef = projectionMatrix[1][1];
     float projectedSize = (info.planetRadius / 10.0 * screenRef) / dist;
 
+    float maxLOD = 9.0;
+    
     // 7. Mappatura con Curvatura
     // Portiamo il valore in un range normalizzato 0.0 - 1.0 basato sul range desiderato (0-9)
-    float baseLod = log2(projectedSize * 64.0);
-    float normalizedLod = clamp(baseLod / 9.0, 0.0, 1.0);
+    float baseLod = log2(projectedSize * 32.0);
+    float normalizedLod = clamp(baseLod / maxLOD, 0.0, 1.0);
 
     // Applichiamo una curva di potenza:
     // 1.0 = lineare (come ora)
     // 2.0 = parabola (molto lento all'inizio, esplode alla fine)
     // 1.5 = una via di mezzo corretta
-    float curvedLod = pow(normalizedLod, 1.5);
+    float curvedLod = pow(normalizedLod, 2.0);
 
     // Riportiamo nel range 0-9
-    float lodWeight = curvedLod * 9.0;
+    float lodWeight = curvedLod * maxLOD;
     
-    return uint(clamp(lodWeight, 1.0, 9.0));
+    return uint(clamp(lodWeight, 1.0, maxLOD));
 }
 
-constant float occlusionMargin = 0.1f;
+constant float occlusionMargin = 0.01f;
 
 // --- CONSTANTS ---
 constant float3 icosahedronVertices[12] = {
@@ -382,7 +392,7 @@ void planet_mesh_shader(
         VertexOut vout;
         vout.uv = fromPosToUV(p_ico);
                 
-        auto p = get_full_displaced_pos(p_ico, planetInfo, planetTex, normalTex, planetSampler, 9);
+        auto p = get_full_displaced_pos(p_ico, planetInfo, planetTex, normalTex, planetSampler, 12);
         
         //auto n = normalTex.sample(planetSampler, vout.uv).xyz;
         
@@ -463,6 +473,64 @@ float3 ACESFilm(float3 x) {
     return saturate((x * (a * x + b)) / (x * (c * x + d) + e));
 }
 
+// =================================================================
+// CALCOLO PROCEDURALE DELL'ORIZZONTE (OBJECT-SPACE HO)
+// =================================================================
+float calculateProceduralHorizonOcclusion(
+    float3 p_ico,
+    float3 N,
+    CompactPlanetInfo info,
+    texture2d<float> planetTex,
+    texture2d<float> normalTex,
+    sampler planetSampler
+) {
+    // 1. Generiamo una base tangente locale alla sfera per muoverci a raggiera
+    float3 up = abs(p_ico.z) < 0.999f ? float3(0.0f, 0.0f, 1.0f) : float3(1.0f, 0.0f, 0.0f);
+    float3 T = normalize(cross(up, p_ico));
+    float3 B = cross(p_ico, T);
+    
+    // Campioniamo la nostra posizione attuale a ottave ridotte (es. 4) per inseguire la macro-geometria
+    float3 currentPos = get_full_displaced_pos(p_ico, info, planetTex, normalTex, planetSampler, 4);
+    
+    float occlusionAccum = 0.0f;
+    const int numDirections = 4; // Nord, Sud, Est, Ovest sulla superficie
+    const int numSteps = 3;      // Quanti passi facciamo verso l'esterno
+    const float stepSize = 0.004f; // Quanto ampio è il raggio di ricerca del cratere
+    
+    float3 dirs[4] = { T, -T, B, -B };
+    
+    // 2. Raymarching a raggiera
+    for (int d = 0; d < numDirections; ++d) {
+        float maxHorizonSin = 0.0f;
+        
+        for (int s = 1; s <= numSteps; ++s) {
+            // Camminiamo sulla sfera di base
+            float3 sampleIco = normalize(p_ico + dirs[d] * (stepSize * (float)s));
+            // Troviamo la quota del terreno in quel punto vicino (sempre a ottave basse)
+            float3 samplePos = get_full_displaced_pos(sampleIco, info, planetTex, normalTex, planetSampler, 4);
+            
+            // Vettore che va dal nostro pixel al picco vicino
+            float3 horizonVec = samplePos - currentPos;
+            float dist = length(horizonVec);
+            
+            if (dist > 1e-4f) {
+                horizonVec /= dist;
+                // Più il vettore punta nella direzione della normale N, più la montagna è alta rispetto a noi
+                float horizonSin = max(0.0f, dot(horizonVec, N));
+                
+                // Attenuazione basata sulla distanza (montagne troppo lontane occludono meno)
+                horizonSin /= (1.0f + dist * 5.0f);
+                
+                maxHorizonSin = max(maxHorizonSin, horizonSin);
+            }
+        }
+        occlusionAccum += maxHorizonSin;
+    }
+    
+    // Restituisce un fattore di visibilità tra 0.0 (totalmente occluso/buio) e 1.0 (cielo aperto)
+    return saturate(1.0f - (occlusionAccum / (float)numDirections) * 2.0f);
+}
+
 
 // --- FRAGMENT SHADER ---
 [[fragment]]
@@ -475,6 +543,8 @@ float4 planet_fragment_shader(
     constant float4& cameraPosition [[buffer(27)]],
     constant Lights& lights [[buffer(28)]],
     constant CompactPlanetInfo& planetInfo [[buffer(13)]],
+    constant BVHNode* data [[buffer(14)]],
+    constant Triangle* primitives [[buffer(15)]],
     texture2d<float> planetTex [[texture(2)]],
     texture2d<float> normalTex [[texture(3)]],
     depth2d_array<float> shadowMaps [[texture(0)]],
@@ -484,8 +554,8 @@ float4 planet_fragment_shader(
     auto geometricN = -normalize(cross(dfdx(in.worldPosition.xyz), dfdy(in.worldPosition.xyz)));
     auto eye = (in.worldPosition - cameraPosition).xyz;
     
-    auto delta = max(length(dfdx(in.uv)), length(dfdy(in.uv)));
-    delta = clamp(delta, 0.0000001, 0.001);
+    auto delta = max(length(dfdx(in.worldPosition)), length(dfdy(in.worldPosition))) / planetInfo.planetRadius / planetInfo.deltaMultiplier;
+    delta = clamp(delta, planetInfo.minDelta, planetInfo.maxDelta);
     auto uv = fromPosToUV(normalize(in.icoPosition));
     
     auto baseNormal = normalTex.sample(planetSampler, uv).xyz;
@@ -493,7 +563,9 @@ float4 planet_fragment_shader(
     
     float3 e1;
     float3 e2;
-    int attempts = 5;
+    int attempts = 1;
+    float3 worldPos;
+    
     while (attempts > 0) {
         attempts--;
         float2 uv_plus_u = float2(uv.x + delta, uv.y);
@@ -501,9 +573,15 @@ float4 planet_fragment_shader(
         float2 uv_minus_u = float2(uv.x - delta, uv.y);
         float2 uv_minus_v = float2(uv.x, uv.y - delta);
             
-        uint octaves = 14;
-        e1 = get_full_displaced_pos(fromUVToPos(uv_plus_u), planetInfo, planetTex, normalTex, planetSampler, octaves) - get_full_displaced_pos(fromUVToPos(uv_minus_u), planetInfo, planetTex, normalTex, planetSampler, octaves);
-        e2 = get_full_displaced_pos(fromUVToPos(uv_plus_v), planetInfo, planetTex, normalTex, planetSampler, octaves) - get_full_displaced_pos(fromUVToPos(uv_minus_v), planetInfo, planetTex, normalTex, planetSampler, octaves);
+        uint octaves = planetInfo.octaves;
+        auto a = get_full_displaced_pos(fromUVToPos(uv_plus_u), planetInfo, planetTex, normalTex, planetSampler, octaves);
+        auto b = get_full_displaced_pos(fromUVToPos(uv_minus_u), planetInfo, planetTex, normalTex, planetSampler, octaves);
+        e1 = a - b;
+        auto c = get_full_displaced_pos(fromUVToPos(uv_plus_v), planetInfo, planetTex, normalTex, planetSampler, octaves);
+        auto d = get_full_displaced_pos(fromUVToPos(uv_minus_v), planetInfo, planetTex, normalTex, planetSampler, octaves);
+        e2 = c - d;
+        
+        worldPos = (a + b + c + d) / 4.0;
             
         if (length(e1) < 1e-5) {
             delta *= 2;
@@ -524,9 +602,25 @@ float4 planet_fragment_shader(
     if (dot(N, eye) > 0 and dot(geometricN, eye) < 0) N = mix(N, geometricN, 0.5);
     
     float4 color = getRockyPlanetColor(in.worldPosition.xyz, N);
+    color = float4(0.5, 0.5, 0.5, 1.0);
+
+    float haoFactor = 1.0f;
+    // Horizon-Based Ambient Occlusion
+    if (planetInfo.useHBAO > 0) {
+        haoFactor = calculateProceduralHorizonOcclusion(
+                                                              in.icoPosition,
+                                                              N,
+                                                              planetInfo,
+                                                              planetTex,
+                                                              normalTex,
+                                                              planetSampler
+                                                              );
+    }
     
+
+
     auto c = applyFULLSHADOWWARDLightsWithOrenNayar(
-        in.worldPosition,
+        float4(worldPos, 1.0),
         color,
         normalize(float4(N, 0.0)),
         roughness,
@@ -537,10 +631,27 @@ float4 planet_fragment_shader(
         pointShadowData,
         shadowMaps,
         cubeMaps,
-        planetSampler
+        planetSampler,
+        haoFactor,
+        data,
+        primitives,
+        planetInfo.useRayTracingShadows
     );
     
     auto tonemapped = ACESFilm(c.xyz);
+    
+    /*
+    float3 V = normalize(cameraPosition - in.worldPosition).xyz;
+    // Trucco analitico per l'alone del bordo (Rim Light Atmosferica)
+    float rim = 1.0f - saturate(dot(N, V));
+    rim = pow(rim, 4.0f); // Rende l'alone molto stretto sul bordo
+
+    // Accendi l'alone solo se la luce del sole colpisce quel lato del pianeta
+    float sunFacing = saturate(dot(N, -lights.directionalLights[0].direction));
+
+    float3 atmosphereColor = float3(0.2f, 0.5f, 0.7f); // Un bel blu Rayleigh
+    tonemapped += atmosphereColor * rim * sunFacing * 2.0f;
+     */
     
     return float4(tonemapped, 1.0);
 }
