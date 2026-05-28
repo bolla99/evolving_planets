@@ -4,6 +4,12 @@
 using namespace metal;
 
 
+struct SkyboxSettings {
+    float density = 50.0;
+    float starsFraction = 0.9;
+};
+
+
 struct VertexIn {
     float3 position [[attribute(0)]];
 };
@@ -54,89 +60,88 @@ vertex VertexOut vertexSkybox(
     return vertexOut;
 }
 
-float3 getPixelColor(float3 id, float3 dir, float starsFraction) {
-    // Usiamo neighborId per la probabilità
+inline float3 getPixelColor(float3 id, float3 dir, float starsFraction) {
+    // h is the probability that in that cube a star is present
     float h = hash1d(id * 12.9898 + id.yzx * 78.233);
-    float keepStar = step(starsFraction, h);
     
-    if (keepStar <= 0.0) return float3(0.0, 0.0, 0.0);
+    // if h > starsFraction then the star is present
+    if (h < starsFraction) return float3(0.0, 0.0, 0.0);
     
-    // 2. OFFSET AGGRESSIVO
-    // Prendiamo un hash 3D per muovere la stella in ogni direzione
+    // star position inside the cube
     float3 offset = hash3d_point(id);
         
-    // Spostiamo la stella: neighborId è l'origine della cella,
-    // aggiungendo l'offset (0..1) la posizioniamo ovunque nel cubetto
-    float3 starPos = id + offset / 2.0;
+    // absolute star position
+    float3 starPos = id + offset;// / 2.0;
     float3 starDir = normalize(starPos);
         
-    // 3. CALCOLO DISTANZA (usando il raggio ruotato)
+    // distance between pixel and star
     float cosAngle = dot(dir, starDir);
         
-    if (cosAngle <= 0) return float3(0.0, 0.0, 0.0);
+    if (cosAngle <= 0.999) return float3(0.0, 0.0, 0.0);
     
-    //float sizeSelector = (h - 0.9) / 0.1;
-    // use 128 (ghood value)
+    // use 128 (good value)
+    // the probability h becomes the size selector; the higher, the bigger
     float sizeSelector = pow(h, 128);
             
-    // 2. DIMENSIONE VARIABILE (Esponenti dinamici)
-    // Una stella grande ha un esponente piccolo (si allarga), una piccola ha un esponente enorme.
+    // exponents for core and glow; the lower, the higher
     float coreExp = mix(10000000.0, 5000000.0, sizeSelector);
     float glowExp = mix(1000000.0,  500000.0,  sizeSelector);
             
-    // 3. LUMINOSITÀ VARIABILE
-    // Le stelle grandi devono anche "sparare" più luce
+    // brightness with size selector
     float brightness = mix(0.1, 1.0, sizeSelector);
             
     float core = pow(max(0.0, cosAngle), coreExp) * 2.0;
     float glow = pow(max(0.0, cosAngle), glowExp) * 0.8;
             
-    // 2. ASSI PER LA X (Manteniamo l'allineamento organico)
+    // coordinates system where starDir is the front vector
     float3 up = abs(starDir.y) < 0.9 ? float3(0, 1, 0) : float3(1, 0, 0);
     float3 right = normalize(cross(starDir, up));
-    float3 top = cross(right, starDir);
+    float3 top = cross(starDir, right);
         
-    float angle = 0.785; // 45 gradi per la "X"
+    float angle = 0.785; // 45° in radians
+    // axes rotated by 45° on the xy plane (+x-y and +x+y)
     float3 rotRight = right * cos(angle) - top * sin(angle);
     float3 rotTop   = right * sin(angle) + top * cos(angle);
             
-    // 3. --- LOGICA SPIKES GERARCHICA ---
+    // distance between star and pixel along spike directions
     float xDist = dot(dir, rotRight);
     float yDist = dot(dir, rotTop);
             
-    // A. SOGLIA DI PRESENZA
-    // Le spikes appaiono SOLO se la stella è più luminosa dello 0.85
-    float presence = step(0.85, h); // H è il valore di hash della stella
+    // star has spikes if h >= 0.85 (
+    //float hasSpikes = step(0.85, h); // H è il valore di hash della stella
     //presence = 1.0;
-            
-    // B. LUNGHEZZA VARIABILE AGGRESSIVA
-    // Per le stelle sopra la soglia, allunghiamo le spike per le più grandi
-    // mix(400.0, 100.0, ...) -> più piccolo è il numero, più LUNGA è la spike
-    float spikeLengthNE = mix(400.0, 100.0, sizeSelector);
-    float spikeLengthNW = mix(400.0, 100.0, offset.x); // Altra variazione casuale
-    float spikeLengthSE = mix(400.0, 100.0, offset.y);
-    float spikeLengthSW = mix(400.0, 100.0, offset.z);
-            
-    // C. CALCOLO LINEE (Usiamo esponenti più bassi per la morbidezza)
-    // abs(xDist) controlla la riga verticale, abs(yDist) quella orizzontale
-    float spikeNE = pow(max(0.0, 1.0 - abs(xDist) * spikeLengthNE), 4.0);
-    float spikeNW = pow(max(0.0, 1.0 - abs(yDist) * spikeLengthNW), 4.0);
-    float spikeSE = pow(max(0.0, 1.0 - abs(xDist) * spikeLengthSE), 4.0);
-    float spikeSW = pow(max(0.0, 1.0 - abs(yDist) * spikeLengthSW), 4.0);
-            
-    float spikes = (spikeNE + spikeNW + spikeSE + spikeSW);
-            
-    // D. INTENSITÀ INDIVIDUALE
-    // Le spikes devono essere visibili solo se la stella è abbastanza luminosa.
-    // pow(presence * h, 4.0) crea una caduta rapida per le stelle deboli
-    float spikeArea = pow(cosAngle, 100000.0); // Leggermente più ampio
-    float individualStrength = presence * pow(h, 4.0) * 1.5;
-            
-    float totalSpikes = spikes * spikeArea * individualStrength;
-    // 3. COLORE E COMPOSIZIONE
+    float totalSpikes = 0.0f;
+    
+    // if h >= 0.85 spikes are rendered
+    if (h >= 0.85) {
+        /*
+        float spikeLengthNE = mix(400.0, 100.0, sizeSelector);
+        float spikeLengthNW = mix(400.0, 100.0, sizeSelector); //offset.x); // Altra variazione casuale
+        float spikeLengthSE = mix(400.0, 100.0, sizeSelector);
+        float spikeLengthSW = mix(400.0, 100.0, sizeSelector);
+        float spikeNE = pow(max(0.0, 1.0 - abs(xDist) * spikeLengthNE), 4.0);
+        float spikeNW = pow(max(0.0, 1.0 - abs(yDist) * spikeLengthNW), 4.0);
+        float spikeSE = pow(max(0.0, 1.0 - abs(xDist) * spikeLengthSE), 4.0);
+        float spikeSW = pow(max(0.0, 1.0 - abs(yDist) * spikeLengthSW), 4.0);
+        float spikes = (spikeNE + spikeNW + spikeSE + spikeSW);
+         */
+        
+        float spikeLength = mix(400.0, 100.0, sizeSelector);
+        float spikeX = 2.0f * pow(max(0.0, 1.0 - abs(xDist) * spikeLength), 4.0);
+        float spikeY = 2.0f * pow(max(0.0, 1.0 - abs(yDist) * spikeLength), 4.0);
+        float spikes = spikeX + spikeY;
+
+        float spikeArea = pow(cosAngle, 100000.0); // Leggermente più ampio
+        
+        // strength depending on h, which is star and spikes presence
+        float individualStrength = pow(h, 4.0) * 1.5;
+        
+        totalSpikes = spikes * spikeArea * individualStrength;
+    }
+    
     float3 baseColor = getStarColor(offset.y);
-    //float brightness = (offset.z + 1.0);
-            
+    
+    // star: core (white) + colored glow
     float3 starSample = (core + (glow + totalSpikes) * baseColor) * brightness;
     return starSample;
 }
@@ -148,13 +153,16 @@ fragment float4 fragmentSkybox(
     constant float4& cameraPosition [[buffer(28)]],
     constant ViewportSize &viewportSize [[buffer(29)]]
 ) {
-    float2 pos = float2(vertexOut.position.x / viewportSize.size.x * 2.0f - 1.0f, -vertexOut.position.y / viewportSize.size.y * 2.0f + 1.0f);
-    float4 direction = inverseViewMatrix * inverseProjectionMatrix * float4(pos, 1.0f, 1.0f);
-    direction /= direction.w;
-    float3 rayDirection = normalize(direction.xyz - cameraPosition.xyz);
+    // ndc coordinates (viewport size required)
+    float2 ndc = float2(vertexOut.position.x / viewportSize.size.x * 2.0f - 1.0f, -vertexOut.position.y / viewportSize.size.y * 2.0f + 1.0f);
+    // get world position of the pixel with far z (z = 1.0)
+    float4 farWorldPosition = inverseViewMatrix * inverseProjectionMatrix * float4(ndc, 1.0f, 1.0f);
+    farWorldPosition /= farWorldPosition.w;
+    // get direction from camera towards the point in the sky that is being rendered in this pixel
+    float3 dir = normalize(farWorldPosition.xyz - cameraPosition.xyz);
     
-    // 1. Definiamo una rotazione fissa per inclinare la griglia rispetto agli assi
-    // Questo elimina le linee verticali/orizzontali al centro dello schermo
+    /*
+    // fixed rotation for avoiding grid appearance (vertical and horizontal lines)
     float3x3 rot = float3x3(
         float3( 0.80,  0.60,  0.00),
         float3(-0.60,  0.80,  0.00),
@@ -162,31 +170,37 @@ fragment float4 fragmentSkybox(
     );
 
     // Applichiamo la rotazione al raggio di vista
-    float3 rotatedRd = normalize(rot * rayDirection);
+    dir = normalize(rot * dir);*/
 
+    // density: length of the direction vector;
+    // it determines the resolution of the noise
     float density = 50.0;
-    float3 gridPos = rotatedRd * density;
+    float3 gridPos = dir * density;
+    
+    // min vertex of the cube reached by this vector
     float3 baseId = floor(gridPos);
 
     float3 totalStar = float3(0.0);
     bool useNeighbors = true;
-    
-    totalStar = getPixelColor(baseId, rotatedRd, 0.9);
-    
+    float starsFraction = 0.95;
+    // pixel get the light from its neighbors
     if (useNeighbors) {
         totalStar = float3(0.0);
         for (int x = -1; x <= 1; x++) {
             for (int y = -1; y <= 1; y++) {
                 for (int z = -1; z <= 1; z++) {
                     float3 neighborId = baseId + float3(x, y, z);
-                    totalStar += getPixelColor(neighborId, rotatedRd, 0.9);
+                    totalStar += getPixelColor(neighborId, dir, starsFraction);
                 }
             }
         }
+    } else {
+        totalStar = getPixelColor(baseId, dir, starsFraction);
     }
     
     float3 totalColor = totalStar;
     
+    /*
     for (int i = 1; i < 5; i++) {
         // 1. Definiamo due vettori per spostare lo spazio
         float3 warpSeedA = float3(123.45, 67.89, 12.34);
@@ -194,7 +208,7 @@ fragment float4 fragmentSkybox(
 
         // 2. Creiamo un rumore a bassa frequenza per "warpare" (distorcere)
         // Alza la scala per rendere la distorsione più grande
-        float3 warpRd = rotatedRd * 1 * i * i; // o rayDirection, se non le vuoi allineate
+        float3 warpRd = rotatedDir * 1 * i * i; // o rayDirection, se non le vuoi allineate
 
         // Otteniamo una distorsione per ogni asse (moltiplicata per l'hash per variare)
         float3 warp = float3(
@@ -239,6 +253,7 @@ fragment float4 fragmentSkybox(
         // Sommiamo al totale delle stelle
         totalColor += nebulaSample;
     }
+     */
     return float4(totalColor, 1.0f);
     //return float4(0, 0, 0, 1);
 }
