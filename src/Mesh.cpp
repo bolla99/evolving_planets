@@ -995,8 +995,8 @@ std::shared_ptr<Geometry::Mesh> Geometry::Mesh::fromIcoPlanetRockyfied(
         auto normal = planet.normal(u, v);
         auto position = planet.evaluate(u, v);
 
-        // Use triplanar sampling for more uniform rocky detail
-        float displacement = Geometry::Mesh::ridgedFBMTriplanar(dir * fractalScale, glm::normalize(normal), fractalOctaves);
+        // Use noise for rocky detail
+        float displacement = Geometry::Mesh::ridgedFBM(position * fractalScale, fractalOctaves);
         position += normal * displacement * fractalIntensity;
         vertices[i] = position;
 
@@ -1406,8 +1406,8 @@ std::shared_ptr<Geometry::Mesh> Geometry::Mesh::fromCubePlanetRockyfied(
         auto normal = planet.normal(u, v);
         auto position = planet.evaluate(u, v);
 
-        // Use triplanar sampling for more uniform rocky detail
-        float displacement = Geometry::Mesh::ridgedFBMTriplanar(dir * fractalScale, glm::normalize(normal), fractalOctaves);
+        // Use noise for rocky detail
+        float displacement = Geometry::Mesh::ridgedFBM(position * fractalScale, fractalOctaves);
         position += normal * displacement * fractalIntensity;
         vertices[i] = position;
 

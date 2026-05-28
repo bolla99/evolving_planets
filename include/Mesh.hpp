@@ -183,7 +183,7 @@ namespace Geometry
                 weight = n; // Rende i dettagli dipendenti dalla forma macro (multifrattale)
 
                 frequency *= 2.0f;
-                amplitude *= 0.7f;
+                amplitude *= 0.5f;
             }
             return value;
         }
