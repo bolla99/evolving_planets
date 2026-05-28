@@ -13,7 +13,12 @@
 #include <algorithm>
 
 // massima dimensione foglia in numero di triangoli
-inline constexpr std::size_t BVH_MAX_TRIANGLES_PER_LEAF = 8;
+inline constexpr std::size_t BVH_MAX_TRIANGLES_PER_LEAF = 1;
+
+struct BVHTriangle
+{
+    glm::vec3 v0, v1, v2;
+};
 
 struct AABB
 {
@@ -38,6 +43,7 @@ public:
 private:
     std::vector<BVHNode> _data;
     std::vector<uint32_t> _primitives;
+    std::vector<BVHTriangle> _triangles;
 
     void build(int nodeID, int start, int count, const std::vector<glm::vec3>& vertices, const std::vector<uint32_t>& indices, int nPrimitivesPerLeaf = 8);
     void findIntersectingLeaves(int nodeID, const glm::vec3& o, const glm::vec3& inverse_d, std::vector<int>& leaves);
@@ -46,6 +52,11 @@ private:
     static bool rayAABBIntersection(glm::vec3 o, glm::vec3 inverse_d, AABB aabb);
     static bool mollertrumbore(glm::vec3 ray_origin, glm::vec3 ray_dir, glm::vec3 t1, glm::vec3 t2, glm::vec3 t3, float* parameter);
 
+public:
+    [[nodiscard]] const std::vector<BVHNode>& getData() const { return _data; }
+    [[nodiscard]] const std::vector<uint32_t>& getPrimitives() const { return _primitives; }
+    [[nodiscard]] std::vector<BVHTriangle> getTriangles() const;
+    void optimize(const std::vector<glm::vec3>& vertices, const std::vector<uint32_t>& indices);
 };
 
 #endif //EVOLVING_PLANETS_BHV_HPP

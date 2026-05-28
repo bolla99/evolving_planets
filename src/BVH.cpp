@@ -8,6 +8,7 @@
 #include "glm/ext/quaternion_geometric.hpp"
 
 #include <cmath>
+#include <stack>
 
 #include "glm/fwd.hpp"
 #include "glm/ext/matrix_integer.hpp"
@@ -36,6 +37,7 @@ BVH::BVH(const std::vector<glm::vec3>& vertices, const std::vector<uint32_t>& in
     }
     _data.push_back(root);
     build(0, 0, static_cast<int>(_primitives.size()), vertices, indices, nPrimitivesPerLeaf);
+    optimize(vertices, indices);
 }
 
 void BVH::build(int nodeID, int start, int count, const std::vector<glm::vec3>& vertices, const std::vector<uint32_t>& indices, int nPrimitivesPerLeaf)
@@ -235,7 +237,55 @@ std::vector<glm::vec3> BVH::getLines()
     return lines;
 }
 
+/*
+std::vector<BVHTriangle> BVH::getTriangles(const std::vector<glm::vec3>& vertices, const std::vector<uint32_t>& indices) const
+{
+    std::vector<BVHTriangle> triangles;
+    triangles.reserve(_primitives.size());
+    for (unsigned int pi : _primitives)
+    {
+        triangles.emplace_back(vertices[indices[pi * 3]], vertices[indices[pi * 3 + 1]], vertices[indices[pi * 3 + 2]]);
+    }
+    return triangles;
+}*/
 
+void BVH::optimize(const std::vector<glm::vec3>& vertices, const std::vector<uint32_t>& indices) {
+    _triangles.reserve(_primitives.size());
+    std::stack<int> nodesToVisit;
+    nodesToVisit.push(0);
+    while (!nodesToVisit.empty())
+    {
+        int nodeID = nodesToVisit.top();
+        nodesToVisit.pop();
+        auto& node = _data[nodeID];
+        if (node.numPrimitives > 0)
+        {
+            auto newStart = _triangles.size();
+            // leaf node, add triangles
+            for (int i = node.leftChild; i < node.leftChild + node.numPrimitives; i++)
+            {
+                auto pi = _primitives[i];
+                _triangles.push_back({
+                    vertices[indices[pi * 3]],
+                    vertices[indices[pi * 3 + 1]],
+                    vertices[indices[pi * 3 + 2]]
+                });
+            }
+            node.leftChild = newStart;
+        }
+        else
+        {
+            // internal node, visit children
+            nodesToVisit.push(node.leftChild);
+            nodesToVisit.push(node.leftChild + 1);
+        }
+    }
+}
+
+std::vector<BVHTriangle> BVH::getTriangles() const
+{
+    return _triangles;
+}
 
 
 
