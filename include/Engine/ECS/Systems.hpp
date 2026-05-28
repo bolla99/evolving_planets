@@ -146,12 +146,12 @@ struct LightAndShadowSystem : ISystem
             lights.numDirectionalLights++;
 
 
-            auto d = 10.0f;
-            auto dir = glm::vec3(world.getComponent<DirectionalLightComponent>(directionalLights[i]).light.direction);
+            auto dir = glm::vec3(lightComp.light.direction);
             auto up = glm::vec3(0.0f, 1.0f, 0.0f);
             if (std::abs(glm::dot(glm::normalize(dir), up)) > 0.99f) up = glm::vec3(0.0f, 0.0f, 1.0f);
-            auto lightViewMatrix = glm::lookAt(-dir * 10.0f, dir, up);
-            auto orthoProjMatrix = glm::orthoRH_ZO(-1.0f * d, d, -1.0f * d, d, 1.0f, 100.0f);
+            auto lightViewMatrix = glm::lookAt(-dir * lightComp.distance, dir, up);
+            auto d = lightComp.orthoSize;
+            auto orthoProjMatrix = glm::orthoRH_ZO(-1.0f * d, d, -1.0f * d, d, lightComp.nearPlane, lightComp.farPlane);
             shadowData.lightViewMatrix[i] = orthoProjMatrix * lightViewMatrix;
         }
 
@@ -455,6 +455,55 @@ struct UpdateCameraTransformSystem : public ISystem
         }
     }
     std::string name() const override { return "Update Ward Material System"; }
+};
+
+// look for entities that have a mesh and requiest for bvh component
+struct UpdateBVH : public ISystem
+{
+    void update(World& world, const Context& ctx, float dt) override
+    {
+        auto entities = world.query<BVHRequestComponent, MeshComponent>();
+        for (auto& entity : entities)
+        {
+            auto& meshComp = world.getComponent<MeshComponent>(entity);
+            auto mesh = meshComp.mesh;
+
+            // build bvh
+            auto bvh = BVH(mesh->getVertices(), mesh->getFacesData(), 8);
+
+            // add bvh component
+            world.addComponent<BVHComponent>(entity, BVHComponent(bvh, mesh->getVertices(), mesh->getFacesData()));
+
+            // remove request component
+            world.removeComponent<BVHRequestComponent>(entity);
+        }
+    }
+    std::string name() const override { return "Update Ward Material System"; }
+};
+
+struct UpdateBVHMaterial : public ISystem
+{
+    void update(World& world, const Context& ctx, float dt) override
+    {
+        auto entities = world.query<BVHComponent, BVHMaterialComponent, MaterialComponent>();
+        for (auto& entity : entities)
+        {
+            auto bvhMatComp = world.getComponent<BVHMaterialComponent>(entity);
+            if (bvhMatComp.dirty)
+            {
+                auto bvhComp = world.getComponent<BVHComponent>(entity);
+                auto materialComp = world.getComponent<MaterialComponent>(entity);
+                auto mID = materialComp.id;
+                auto bvh = bvhComp.bvh;
+                auto vertices = bvhComp.vertices;
+                auto indices = bvhComp.indices;
+                ctx.renderer->setInstanceMaterial(mID, getBytes(bvh.getData()), BVH_NODES);
+                ctx.renderer->setInstanceMaterial(mID, getBytes(bvh.getTriangles()), BVH_PRIMITIVES);
+                bvhMatComp.dirty = false;
+            }
+        }
+    }
+    std::string name() const override { return "Update BVH Material System"; }
 };
 
 

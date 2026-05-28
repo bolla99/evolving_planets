@@ -102,8 +102,9 @@ namespace Rendering::Metal
         static auto shadowPassDepthTextureDesc = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
         shadowPassDepthTextureDesc->setTextureType(MTL::TextureType2DArray);
         shadowPassDepthTextureDesc->setPixelFormat(MTL::PixelFormatDepth32Float);
-        shadowPassDepthTextureDesc->setWidth(1024);
-        shadowPassDepthTextureDesc->setHeight(1024);
+        auto shadowPassTextureSize = 1024;
+        shadowPassDepthTextureDesc->setWidth(shadowPassTextureSize);
+        shadowPassDepthTextureDesc->setHeight(shadowPassTextureSize);
         shadowPassDepthTextureDesc->setArrayLength(MAX_DIRECTIONAL_LIGHTS);
         shadowPassDepthTextureDesc->setStorageMode(MTL::StorageModePrivate);
         shadowPassDepthTextureDesc->setUsage(MTL::TextureUsageRenderTarget | MTL::TextureUsageShaderRead);
@@ -219,35 +220,67 @@ namespace Rendering::Metal
         // MSAA TEXTURE
         if (!_msaaTexture || _msaaTexture->width() != _drawable->texture()->width() || _msaaTexture->height() != _drawable->texture()->height())
         {
-            auto msaaDesc = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
-            msaaDesc->setTextureType(MTL::TextureType2DMultisample);
-            msaaDesc->setPixelFormat(MTL::PixelFormatBGRA8Unorm);
-            msaaDesc->setWidth(_drawable->texture()->width());
-            msaaDesc->setHeight(_drawable->texture()->height());
-            msaaDesc->setSampleCount(sampleCount);
-            msaaDesc->setStorageMode(MTL::StorageModePrivate);
-            msaaDesc->setUsage(MTL::TextureUsageRenderTarget);
-            _msaaTexture = NS::TransferPtr(_device->newTexture(msaaDesc.get()));
+            if (sampleCount > 1)
+            {
+                auto msaaDesc = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
+                msaaDesc->setTextureType(MTL::TextureType2DMultisample);
+                msaaDesc->setPixelFormat(MTL::PixelFormatBGRA8Unorm);
+                msaaDesc->setWidth(_drawable->texture()->width());
+                msaaDesc->setHeight(_drawable->texture()->height());
+                msaaDesc->setSampleCount(sampleCount);
+                msaaDesc->setStorageMode(MTL::StorageModePrivate);
+                msaaDesc->setUsage(MTL::TextureUsageRenderTarget);
+                _msaaTexture = NS::TransferPtr(_device->newTexture(msaaDesc.get()));
+            } else {
+                auto msaaDesc = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
+                msaaDesc->setTextureType(MTL::TextureType2D);
+                msaaDesc->setPixelFormat(MTL::PixelFormatBGRA8Unorm);
+                msaaDesc->setWidth(_drawable->texture()->width());
+                msaaDesc->setHeight(_drawable->texture()->height());
+                msaaDesc->setStorageMode(MTL::StorageModePrivate);
+                msaaDesc->setUsage(MTL::TextureUsageRenderTarget);
+                _msaaTexture = NS::TransferPtr(_device->newTexture(msaaDesc.get()));
+            }
         }
 
-        passDescriptor->colorAttachments()->object(0)->setTexture(_msaaTexture.get());
-        passDescriptor->colorAttachments()->object(0)->setResolveTexture(_drawable->texture());
+        if (sampleCount > 1) {
+            passDescriptor->colorAttachments()->object(0)->setTexture(_msaaTexture.get());
+            passDescriptor->colorAttachments()->object(0)->setResolveTexture(_drawable->texture());
+        } else {
+            passDescriptor->colorAttachments()->object(0)->setTexture(_drawable->texture());
+        }
         passDescriptor->colorAttachments()->object(0)->setLoadAction(MTL::LoadAction::LoadActionClear);
         passDescriptor->colorAttachments()->object(0)->setClearColor(MTL::ClearColor{0.0f, 0.0f, 0.0f, 1.0});
-        passDescriptor->colorAttachments()->object(0)->setStoreAction(MTL::StoreAction::StoreActionMultisampleResolve);
+        if (sampleCount > 1) {
+            passDescriptor->colorAttachments()->object(0)->setStoreAction(MTL::StoreAction::StoreActionMultisampleResolve);
+        } else {
+            passDescriptor->colorAttachments()->object(0)->setStoreAction(MTL::StoreAction::StoreActionStore);
+        }
 
         // DEPTH TEXTURE
         if (!_depthTexture || _depthTexture->width() != _drawable->texture()->width() || _depthTexture->height() != _drawable->texture()->height())
         {
-            auto depthDesc = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
-            depthDesc->setTextureType(MTL::TextureType2DMultisample);
-            depthDesc->setPixelFormat(MTL::PixelFormatDepth32Float);
-            depthDesc->setWidth(_drawable->texture()->width());
-            depthDesc->setHeight(_drawable->texture()->height());
-            depthDesc->setSampleCount(sampleCount);
-            depthDesc->setStorageMode(MTL::StorageModePrivate);
-            depthDesc->setUsage(MTL::TextureUsageRenderTarget);
-            _depthTexture = NS::TransferPtr(_device->newTexture(depthDesc.get()));
+            if (sampleCount > 1)
+            {
+                auto depthDesc = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
+                depthDesc->setTextureType(MTL::TextureType2DMultisample);
+                depthDesc->setPixelFormat(MTL::PixelFormatDepth32Float);
+                depthDesc->setWidth(_drawable->texture()->width());
+                depthDesc->setHeight(_drawable->texture()->height());
+                depthDesc->setSampleCount(sampleCount);
+                depthDesc->setStorageMode(MTL::StorageModePrivate);
+                depthDesc->setUsage(MTL::TextureUsageRenderTarget);
+                _depthTexture = NS::TransferPtr(_device->newTexture(depthDesc.get()));
+            } else {
+                auto depthDesc = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
+                depthDesc->setTextureType(MTL::TextureType2D);
+                depthDesc->setPixelFormat(MTL::PixelFormatDepth32Float);
+                depthDesc->setWidth(_drawable->texture()->width());
+                depthDesc->setHeight(_drawable->texture()->height());
+                depthDesc->setStorageMode(MTL::StorageModePrivate);
+                depthDesc->setUsage(MTL::TextureUsageRenderTarget);
+                _depthTexture = NS::TransferPtr(_device->newTexture(depthDesc.get()));
+            }
         }
 
         passDescriptor->depthAttachment()->setTexture(_depthTexture.get());

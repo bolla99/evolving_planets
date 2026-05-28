@@ -391,7 +391,7 @@ namespace Rendering
                         {MODEL_MATRIX, Vertex, 28}
                     },
                     {
-                            {DIRECTIONAL_LIGHT_INDEX, Vertex, 29},
+                            //{DIRECTIONAL_LIGHT_INDEX, Vertex, 29},
                             {SHADOW_DATA, Vertex, 30}
                     }, {}, {}, {}, -1, 1
                 }
@@ -481,32 +481,6 @@ namespace Rendering
             }
         },
         std::pair<std::string, const PSOConfig>{
-            std::string("ProceduralMesh"),
-            PSOConfig
-            {
-                "ProceduralMesh",
-                PipelineType::Mesh,
-                "",
-                "procedural_mesh_shader",
-                "procedural_fragment_shader",
-                Triangle,
-                Solid,
-                None,
-                Enabled,
-                ColorPixelFormat::BGRAUnorm,
-                DepthPixelFormat::Depth32Float,
-                G_getVertexDescriptors().at("P"), // Dummy, won't be used for procedural
-                {
-                    {MODEL_MATRIX, Mesh, 0}
-                },
-                {
-                    {VIEW_MATRIX, Mesh, 29},
-                    {PROJECTION_MATRIX, Mesh, 30}
-                },
-                {}, {}, {}, -1
-            }
-        },
-        std::pair<std::string, const PSOConfig>{
             std::string("Icosphere"),
             PSOConfig
             {
@@ -529,7 +503,7 @@ namespace Rendering
                     {VIEW_MATRIX, Mesh, 29},
                     {PROJECTION_MATRIX, Mesh, 30}
                 },
-                {}, {}, {}, -1
+                {}, {}, {}
             }
         },
         std::pair<std::string, const PSOConfig>{
@@ -609,8 +583,7 @@ namespace Rendering
                     {Core::ClampToEdge, Core::ClampToEdge, Core::Linear, Core::Linear, true, Fragment, 1},
                     {Core::ClampToEdge, Core::ClampToEdge, Core::Linear, Core::Linear, true, Object, 1},
                     {Core::ClampToEdge, Core::ClampToEdge, Core::Linear, Core::Linear, true, Mesh, 1}
-                },
-                -1
+                }
             }
         },
         std::pair<std::string, const PSOConfig>{
@@ -665,8 +638,7 @@ namespace Rendering
                 {
                     {Core::Repeat, Core::Repeat, Core::Linear, Core::Linear, true, Fragment, 0},
                     {Core::Repeat, Core::Repeat, Core::Linear, Core::Linear, true, Fragment, 1}
-                },
-                -1
+                }
             }
         },
         std::pair<std::string, const PSOConfig>{
@@ -695,8 +667,7 @@ namespace Rendering
                 {},
                 {
                     {Core::Repeat, Core::ClampToEdge, Core::Linear, Core::Linear, true, Fragment, 0}
-                },
-                -1
+                }
             }
         },
         std::pair<std::string, const PSOConfig>{
@@ -720,7 +691,9 @@ namespace Rendering
                     {MODEL_MATRIX, Mesh, 22},
                     {COMPACT_PLANET_INFO, Object, 13},
                     {COMPACT_PLANET_INFO, Mesh, 13},
-                    {COMPACT_PLANET_INFO, Fragment, 13}
+                    {COMPACT_PLANET_INFO, Fragment, 13},
+                    {BVH_NODES, Fragment, 14},
+                    {BVH_PRIMITIVES, Fragment, 15},
                 },
                 {
                     {CAMERA_POSITION, Object, 25},
@@ -752,8 +725,7 @@ namespace Rendering
                     {Core::Repeat, Core::ClampToEdge, Core::Linear, Core::Linear, true, Fragment, 0},
                     {Core::Repeat, Core::ClampToEdge, Core::Linear, Core::Linear, true, Object, 0},
                     {Core::Repeat, Core::ClampToEdge, Core::Linear, Core::Linear, true, Mesh, 0}
-                },
-                -1
+                }
             }
         }
     };

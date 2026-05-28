@@ -2,6 +2,7 @@
 #define PLANET_SYSTEM_HPP
 
 #include "Planet.hpp"
+#include "Mesh.hpp"
 #include "Engine/ECS/Systems.hpp"
 #include "Engine/ECS/World.hpp"
 #include "Engine/ECS/Components.hpp"
@@ -15,6 +16,12 @@ struct PlanetGeneratorSystem : public ISystem {
             auto& config = world.getComponent<PlanetConfigComponent>(entity);
 
             if (config.isDirty) {
+                // add bvh request component
+                if (!world.hasComponent<BVHComponent>(entity) and (!world.hasComponent<BVHRequestComponent>(entity)))
+                {
+                    world.addComponent<BVHRequestComponent>(entity, BVHRequestComponent());
+                    world.addComponent<BVHMaterialComponent>(entity, BVHMaterialComponent());
+                }
                 if (world.hasComponent<PlanetDataComponent>(entity))
                 {
                     auto& data = world.getComponent<PlanetDataComponent>(entity);
@@ -43,11 +50,32 @@ struct PlanetGeneratorSystem : public ISystem {
                     config.isDirty = false;
                 }
 
+                auto& data = world.getComponent<PlanetDataComponent>(entity);
                 if (world.hasComponent<PlanetInfoComponent>(entity))
                 {
                     auto& info = world.getComponent<PlanetInfoComponent>(entity);
                     info.info.planetRadius = config.baseRadius;
+                    
+                    // Create low poly mesh with noise
+                    auto mesh = Geometry::Mesh::fromIcoPlanetRockyfied(*data.planet, 5, Geometry::Mesh::noVertexColor(), false, 9, info.info.fractalIntensity, info.info.fractalScale);
+                    if (world.hasComponent<MeshComponent>(entity))
+                    {
+                        world.getComponent<MeshComponent>(entity).mesh = mesh;
+                    }
+                    else
+                    {
+                        world.addComponent<MeshComponent>(entity, MeshComponent(mesh));
+                    }
                 }
+                else
+                {
+                     // Fallback if PlanetInfoComponent is missing (though it shouldn't be)
+                     if (!world.hasComponent<MeshComponent>(entity))
+                     {
+                        world.addComponent<MeshComponent>(entity, MeshComponent(Geometry::Mesh::dummy()));
+                     }
+                }
+                
                 // if it was dirty and is already rendering, delete renderable and recreate with new textures
                 // material is unchanged
                 if (world.hasComponent<RenderableComponent>(entity))

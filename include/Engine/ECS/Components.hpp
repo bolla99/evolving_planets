@@ -13,12 +13,27 @@
 #include <btBulletCollisionCommon.h>
 #include <btBulletDynamicsCommon.h>
 #include <memory>
+
+#include "BVH.hpp"
 #include "Rendering/Material.hpp"
 
 class Planet;
 namespace Core {
     class Texture;
 }
+
+
+struct BVHRequestComponent {};
+struct BVHComponent
+{
+    BVH bvh;
+    std::vector<glm::vec3> vertices;
+    std::vector<uint32_t> indices;
+};
+struct BVHMaterialComponent
+{
+    bool dirty = true;
+};
 
 struct PlanetConfigComponent {
     int nParallels = 15;
@@ -143,6 +158,10 @@ struct DirectionalLightComponent
 {
     DirectionalLight light = DirectionalLight();
     float intensity = 1.0f;
+    float distance = 250.0f; //distance from origin along light -dir light direction
+    float nearPlane = 1.0f;
+    float farPlane = 500.0f;
+    float orthoSize = 250.0f; // size of the orthographic projection for shadow mapping
 };
 
 struct PointLightComponent

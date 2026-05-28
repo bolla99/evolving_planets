@@ -118,6 +118,11 @@ struct ComponentsInspector
                 ImGui::InputFloat3("Color", glm::value_ptr(dlc.light.color));
                 ImGui::InputFloat3("Base Direction", glm::value_ptr(dlc.light.direction));
                 ImGui::SliderFloat("Intensity: ", &dlc.intensity, 0.0f, 10.0f);
+                ImGui::Text("Shadow Data");
+                ImGui::InputFloat("Distance", &dlc.distance);
+                ImGui::InputFloat("Near Plane", &dlc.nearPlane);
+                ImGui::InputFloat("Far Plane", &dlc.farPlane);
+                ImGui::InputFloat("Ortho Size", &dlc.orthoSize);
             }
         });
         ci.registerComponent<MeshComponent>([](World& world, Context& ctx, EntityID entity, MeshComponent& mesh)
@@ -308,6 +313,19 @@ struct ComponentsInspector
                     mat.useConstantLOD = useConstantLOD ? 1 : 0;
                 }
                 ImGui::Text("Current LOD: %d", mat.constantLOD);
+                bool useHBAO = mat.useHBAO != 0;
+                if (ImGui::Checkbox("Use HBAO", &useHBAO)) {
+                    mat.useHBAO = useHBAO ? 1 : 0;
+                }
+                ImGui::InputInt("Octaves", &mat.octaves);
+                ImGui::InputFloat("Delta Multiplier", &mat.deltaMultiplier);
+                ImGui::InputFloat("Min Delta", &mat.minDelta, 0, 0, "%.10f");
+                ImGui::InputFloat("Max Delta", &mat.maxDelta);
+
+                bool useRayTracingShadows = mat.useRayTracingShadows != 0;
+                if (ImGui::Checkbox("Use Ray Tracing Shadows", &useRayTracingShadows)) {
+                    mat.useRayTracingShadows = useRayTracingShadows ? 1 : 0;
+                }
             }
         });
 
@@ -316,6 +334,16 @@ struct ComponentsInspector
             if (ImGui::CollapsingHeader("Textures Component"))
             {
                 ImGui::Text("Number of Textures: %zu", matComp.textures.size());
+            }
+        });
+
+        ci.registerComponent<BVHComponent>([](World& world, Context& ctx, EntityID entity, BVHComponent& matComp)
+        {
+            if (ImGui::CollapsingHeader("BVH"))
+            {
+                //ImGui::Text("BVH Nodes: %zu", matComp.bvh.);
+                ImGui::Text("Vertices: %zu", matComp.vertices.size());
+                ImGui::Text("Indices: %zu", matComp.indices.size());
             }
         });
         return ci;

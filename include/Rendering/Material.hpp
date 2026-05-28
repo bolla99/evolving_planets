@@ -11,6 +11,7 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <vector>
 
+#include "BVH.hpp"
 #include "Lights.hpp"
 #include "glm/gtc/matrix_inverse.hpp"
 
@@ -43,7 +44,9 @@ enum MaterialType
     PLANET_TEXTURE,
     PLANET_NORMAL_TEXTURE,
     BSPLINE_TEXTURE,
-    ROCKY_NOISE_TEXTURE
+    ROCKY_NOISE_TEXTURE,
+    BVH_NODES,
+    BVH_PRIMITIVES,
 };
 
 enum MaterialStage
@@ -59,6 +62,14 @@ struct MaterialInfo
     MaterialType type;
     MaterialStage stage;
     int bufferIndex;
+};
+
+struct BVHMaterial
+{
+    std::vector<BVHNode> data;
+    std::vector<uint> primitives;
+    std::vector<glm::vec3> vertices;
+    std::vector<uint> indices;
 };
 
 // MATERIALS
@@ -132,10 +143,16 @@ struct PlanetInfoMaterial {
 
 struct CompactPlanetInfoMaterial {
     float planetRadius = 0.0f;
-    float fractalIntensity = 10.0f;
+    float fractalIntensity = 15.0f;
     float fractalScale = 0.01f;
-    int useConstantLOD = 1;
+    int useConstantLOD = 0;
     int constantLOD = 0;
+    int useHBAO = 0;
+    int octaves = 12;
+    float deltaMultiplier = 5.0f;
+    float minDelta = 0.000004f;
+    float maxDelta = 0.001f;
+    int useRayTracingShadows = 1;
 };
 
 template <typename T>
@@ -143,6 +160,16 @@ std::vector<std::byte> getBytes(const T& material)
 {
     auto bytes = std::vector<std::byte>(sizeof(T));
     std::memcpy(bytes.data(), &material, sizeof(T));
+    return bytes;
+}
+
+// Support for vector serialization generally (if needed)
+template <typename T>
+std::vector<std::byte> getBytes(const std::vector<T>& vec)
+{
+    size_t size = vec.size() * sizeof(T);
+    std::vector<std::byte> bytes(size);
+    std::memcpy(bytes.data(), vec.data(), size);
     return bytes;
 }
 
@@ -203,6 +230,10 @@ constexpr std::vector<std::byte> getDefaultBytes(MaterialType type)
     case BSPLINE_TEXTURE:
         return {};
     case ROCKY_NOISE_TEXTURE:
+        return {};
+    case BVH_NODES:
+        return {};
+    case BVH_PRIMITIVES:
         return {};
     }
     throw std::runtime_error("Invalid material type");

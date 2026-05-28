@@ -54,6 +54,7 @@ void RTGPApp::run()
     systemManager.addSystem<TextureLoadingSystem>();
     systemManager.addSystem<RenderRegistrationSystem>();
     systemManager.addSystem<BoundingSphereRequestSystem>();
+    systemManager.addSystem<UpdateBVH>();
     // GAMEPLAY SYSTEMS
     systemManager.addSystem<MouseRaySystem>();
     systemManager.addSystem<MouseIntersectionSystem>();
@@ -62,6 +63,7 @@ void RTGPApp::run()
     systemManager.addSystem<UpdateWardMaterialSystem>();
     systemManager.addSystem<RectMaterialComponentSystem>();
     systemManager.addSystem<ViewportSizeMaterialSystem>();
+    systemManager.addSystem<UpdateBVHMaterial>();
     // UPDATE PHYSICS
     systemManager.addSystem<PhysicsSystem>();
     // APPLY TRANSFORM TO GRAPHICS
@@ -137,7 +139,7 @@ void RTGPApp::run()
     // CAMERA ENTITY
     auto cameraID = world.createEntity("camera");
     world.addComponent<Transform>(cameraID, Transform());
-    world.addComponent(cameraID, PointLightComponent({{0.0f, 0.0f, 2.0f, 1.0f}, {10.0f, 10.0, 10.0f, 1.0f}}));
+    world.addComponent(cameraID, PointLightComponent({{0.0f, 0.0f, 2.0f, 1.0f}, {0.0f, 0.0, 0.0f, 1.0f}}));
     auto& cameraComponent = world.addComponent<CameraComponent>(cameraID, {std::make_shared<FPSCamera>()});
     auto camera = cameraComponent.camera;
     camera->position = {0.0f, 0.0f, 550.0f};
