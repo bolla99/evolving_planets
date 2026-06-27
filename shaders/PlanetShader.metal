@@ -2,6 +2,7 @@
 #include "Lighting.hpp"
 #include "util.hpp"
 #include "bvh.hpp"
+#include "rayleigh.hpp"
 
 using namespace metal;
 
@@ -14,9 +15,10 @@ struct Payload {
 struct VertexOut {
     float4 position [[position]];
     float4 worldPosition;
-    float2 uv;
     float3 icoPosition;
     uint subd [[flat]];
+    float4 currentClipPosition;
+    float4 previousClipPosition;
 };
 
 struct CompactPlanetInfo {
@@ -25,12 +27,12 @@ struct CompactPlanetInfo {
     float fractalScale;
     int useConstantLOD;
     int constantLOD;
-    int useHBAO;
     int octaves;
     float deltaMultiplier;
     float minDelta;
     float maxDelta;
     int useRayTracingShadows;
+    int useSkirts;
 };
 
 
@@ -77,7 +79,7 @@ uint calculateLOD(float3 v0, float3 v1, float3 v2, float4x4 modelMatrix, float3 
     float screenRef = projectionMatrix[1][1];
     float projectedSize = (info.planetRadius / 10.0 * screenRef) / dist;
 
-    float maxLOD = 9.0;
+    float maxLOD = 7.0;
     
     // 7. Mappatura con Curvatura
     // Portiamo il valore in un range normalizzato 0.0 - 1.0 basato sul range desiderato (0-9)
@@ -88,15 +90,16 @@ uint calculateLOD(float3 v0, float3 v1, float3 v2, float4x4 modelMatrix, float3 
     // 1.0 = lineare (come ora)
     // 2.0 = parabola (molto lento all'inizio, esplode alla fine)
     // 1.5 = una via di mezzo corretta
-    float curvedLod = pow(normalizedLod, 2.0);
+    float curvedLod = pow(normalizedLod, 1.5);
 
     // Riportiamo nel range 0-9
     float lodWeight = curvedLod * maxLOD;
     
-    return uint(clamp(lodWeight, 1.0, maxLOD));
+    return uint(clamp(lodWeight, 2.0, maxLOD));
 }
 
-constant float occlusionMargin = 0.01f;
+constant float occlusionMargin = 0.5f;
+constant int MAX_SUBDIVISIONS_FOR_MESHLET = 3;
 
 // --- CONSTANTS ---
 constant float3 icosahedronVertices[12] = {
@@ -231,12 +234,12 @@ void planet_object_shader(
     if (planetInfo.useConstantLOD > 0) {
         subd = planetInfo.constantLOD;
     } else {
-        subd = calculateLOD(sv[0], sv[1], sv[2], modelMatrix, cameraPosition.xyz, projectionMatrix, planetInfo, planetTex, normalTex, planetSampler, 0);
+        subd = calculateLOD(sv[0], sv[1], sv[2], modelMatrix, cameraPosition.xyz, projectionMatrix, planetInfo, planetTex, normalTex, planetSampler, 1);
     }
     
     uint numMeshlets = 1;
-    if (subd > 4) {
-        numMeshlets = 1 << (subd - 4);
+    if (subd > MAX_SUBDIVISIONS_FOR_MESHLET) {
+        numMeshlets = 1 << (subd - MAX_SUBDIVISIONS_FOR_MESHLET);
         numMeshlets *= numMeshlets;
     }
 
@@ -248,6 +251,7 @@ void planet_object_shader(
     grid.set_threadgroups_per_grid(uint3(numMeshlets, 1, 1));
 }
 
+/*
 [[mesh]]
 void planet_mesh_shader(
     uint tid [[thread_index_in_threadgroup]],
@@ -263,12 +267,24 @@ void planet_mesh_shader(
     texture2d<float> normalTex [[texture(3)]],
     sampler planetSampler [[sampler(0)]]
 ) {
+    // each meshlet can be subdivided up to 4 times;
+    // if the total subdivision level is lower or equal to 4, then a face will launch a single meshlet, which wil subdivided
+    // if the total subdivision level is higher than 4, each face will launch many meshlet, each of them subdividing 4 times
     uint subd = payload.subdivisionLevel;
+    
+    // n : number of segments each edge is subdivided into
+    // example: if subd = 1, 1 << 1 -> 2: an edge is subdivided one time into two segments
+    // if subd = 2, 1 << 2 -> 4: an edge is subdivided two times into four segments
     uint n = 1 << subd;
     
+    // m is the same as n, but while n refers to the initial face from the object shader, m
+    // refers to the meshlet: the n segments are real edge (they will form triangles) while each m segment identifies a meshlet
     uint m = 1;
-    if (subd > 4) m = 1 << (subd - 4);
+    if (subd > MAX_SUBDIVISIONS_FOR_MESHLET) m = 1 << (subd - MAX_SUBDIVISIONS_FOR_MESHLET);
+    // m stands for the number of row of a face
+    // 2 * (totalRows - thisRow) - 1 is the number of items per row
     
+    // mid -> meshlet identifier
     uint m_row = 0;
     uint temp_mid = mid;
     for (uint r = 0; r < m; ++r) {
@@ -280,19 +296,30 @@ void planet_mesh_shader(
         temp_mid -= tilesInRow;
     }
     uint m_col = temp_mid;
+    // m_row and m_col are coordinates for this meshlet inside the face
+    
+    // n_tile -> segments of a single meshlet
     uint n_tile = n / m;
+    
+    // even column -> upward
+    // odd column -> downward
+    // here downward means that this meshlet is downward with respect to the face
     bool downward = (m_col % 2 != 0);
 
-    uint numTriangles = n_tile * n_tile;
+    // is an edge is subdivided n times, the number of triangles is n^2
+    uint numTrianglesPerMeshlet = n_tile * n_tile;
+    // face triangles
     float3 faceV0 = payload.v0;
     float3 faceV1 = payload.v1;
     float3 faceV2 = payload.v2;
-
-    bool isActuallyVisible = true;
     
-    // make frustum culling
+    bool useSkirts = true;
+
+    // frustum culling
+    bool isThisMeshletVisible = true;
     if (tid == 0) {
-        // Angoli del meshlet in coordinate baricentriche della subface
+        // barycentric coordinates for the vertices of this meshlet
+        // order is low left, low right, high if not downward, top left, low, top right otherwise
         float3 corners_b[3];
         if (!downward) {
             // Upward meshlet
@@ -308,13 +335,16 @@ void planet_mesh_shader(
 
         float4x4 vp = projectionMatrix * viewMatrix;
         bool allOutside[6] = {true, true, true, true, true, true};
+        
         float margin = occlusionMargin;
-
         for (int i = 0; i < 3; ++i) {
+            // get p_ico of this meshlet vertex
             float3 p_ico = normalize(faceV0 * corners_b[i].x + faceV1 * corners_b[i].y + faceV2 * corners_b[i].z);
+            // get actual position (bspline + noise)
             auto p_planet = get_full_displaced_pos(p_ico, planetInfo, planetTex, normalTex, planetSampler, 2);
+            // clip pos
             float4 clipPos = vp * modelMatrix * float4(p_planet, 1.0);
-            
+            // perform checks
             float w_margin = clipPos.w * (1.0 + margin);
             if (clipPos.x >= -w_margin) allOutside[0] = false;
             if (clipPos.x <=  w_margin) allOutside[1] = false;
@@ -323,34 +353,27 @@ void planet_mesh_shader(
             if (clipPos.z >= 0) allOutside[4] = false;
             if (clipPos.z <=  w_margin) allOutside[5] = false;
         }
-
+        
+        // alloutside[j] is true if every vertex of this meshlet fails the test
+        // if alloutside[j] is true for some j, then the meshlet is culled
         for (int j = 0; j < 6; ++j) {
-            if (allOutside[j]) { isActuallyVisible = false; break; }
+            if (allOutside[j]) {
+                // thread 0 set the visible flag and return
+                output.set_primitive_count(0);
+                isThisMeshletVisible = false;
+                break;
+            }
         }
-
-        if (!isActuallyVisible) {
-            numTriangles = 0;
-            output.set_primitive_count(0);
-        } else {
-            output.set_primitive_count(numTriangles);
+        if (isThisMeshletVisible) {
+            output.set_primitive_count(numTrianglesPerMeshlet);
         }
     }
-    
-    // wait for all threads (actually only thread 0 performed the frustum culling
-    threadgroup_barrier(mem_flags::mem_none);
-    // Nota: in Metal mesh shader non esiste un modo diretto per leggere primitive_count
-    // dagli altri thread in modo portabile senza payload o variabili threadgroup.
-    // Ma in questo caso, se il meshlet è scartato via set_primitive_count(0),
-    // possiamo semplicemente lasciare che i thread facciano il lavoro se non abbiamo
-    // un modo pulito per uscire, oppure usare una variabile threadgroup.
     
     threadgroup bool isCulled = false;
     if (tid == 0) {
-        isCulled = !isActuallyVisible;
+        isCulled = !isThisMeshletVisible;
     }
-    // every thread wait for the thread 0 to set culled flag to the right value
     threadgroup_barrier(mem_flags::mem_threadgroup);
-    // every thread can return
     if (isCulled) return;
     
     // these values are constant: each meshlet is always a triangle subdivided 4 times
@@ -361,6 +384,7 @@ void planet_mesh_shader(
     // inside each meshlet / threadgroup, each thread handles a single vertex
     // Vertex generation for the tile
     for (uint vIdx = tid; vIdx < numVertices; vIdx += numThreads) {
+        // coordinates of the vertex relative to the meshlet
         uint i_tile, j_tile;
         uint temp = vIdx;
         uint row_v = 0;
@@ -376,6 +400,7 @@ void planet_mesh_shader(
         i_tile = row_v;
         j_tile = temp;
         
+        // barycentric coordinates
         float w, u_b;
         if (!downward) {
             w = (float)m_row / m + (float)i_tile / n;
@@ -386,27 +411,12 @@ void planet_mesh_shader(
         }
         float v_b = 1.0 - w - u_b;
 
-        float3 p_ico;
-        p_ico = normalize(faceV0 * v_b + faceV1 * u_b + faceV2 * w);
-
-        VertexOut vout;
-        vout.uv = fromPosToUV(p_ico);
-                
+        auto p_ico = normalize(faceV0 * v_b + faceV1 * u_b + faceV2 * w);
         auto p = get_full_displaced_pos(p_ico, planetInfo, planetTex, normalTex, planetSampler, 12);
         
-        //auto n = normalTex.sample(planetSampler, vout.uv).xyz;
-        
-        /*
-        if (planetInfo.useSkirts != 0) {
-            bool isEdge = (i_tile == 0) || (j_tile == 0) || (i_tile + j_tile == n_tile);
-            if (isEdge) {
-                float skirtDepth = planetInfo.planetRadius * 0.001; // 5% del raggio
-                p -= n * skirtDepth;
-            }
-        }*/
-
+        VertexOut vout;
         float4 worldPos = modelMatrix * float4(p, 1.0);
-        vout.position = viewProjectionMatrix * worldPos;
+        vout.position = viewProjectionMatrix * modelMatrix * float4(p, 1.0);
         vout.worldPosition = worldPos;
         vout.icoPosition = p_ico;
         vout.subd = payload.subdivisionLevel;
@@ -415,7 +425,7 @@ void planet_mesh_shader(
     }
 
     // Index generation for the tile
-    for (uint tIdx = tid; tIdx < numTriangles; tIdx += numThreads) {
+    for (uint tIdx = tid; tIdx < numTrianglesPerMeshlet; tIdx += numThreads) {
         uint r_tile = 0;
         uint temp = tIdx;
         for (uint r = 0; r < n_tile; ++r) {
@@ -462,6 +472,305 @@ void planet_mesh_shader(
         }
     }
 }
+ */
+
+[[mesh]]
+void planet_mesh_shader(
+    uint tid [[thread_index_in_threadgroup]],
+    uint mid [[threadgroup_position_in_grid]],
+    const object_data Payload& payload [[payload]],
+    mesh<VertexOut, void, 256, 512, topology::triangle> output,
+    constant float4x4& modelMatrix [[buffer(22)]],
+    constant float4x4& viewProjectionMatrix [[buffer(28)]],
+    constant float4x4& previousViewProjectionMatrix [[buffer(29)]],
+    constant float4x4& jitteredViewProjectionMatrix [[buffer(30)]],
+    constant CompactPlanetInfo& planetInfo [[buffer(13)]],
+    texture2d<float> planetTex [[texture(2)]],
+    texture2d<float> normalTex [[texture(3)]],
+    sampler planetSampler [[sampler(0)]]
+) {
+    uint subd = payload.subdivisionLevel;
+    uint n = 1 << subd;
+    
+    uint m = 1;
+    if (subd > MAX_SUBDIVISIONS_FOR_MESHLET) m = 1 << (subd - MAX_SUBDIVISIONS_FOR_MESHLET);
+    
+    uint m_row = 0;
+    uint temp_mid = mid;
+    for (uint r = 0; r < m; ++r) {
+        uint tilesInRow = 2 * (m - r) - 1;
+        if (temp_mid < tilesInRow) {
+            m_row = r;
+            break;
+        }
+        temp_mid -= tilesInRow;
+    }
+    uint m_col = temp_mid;
+    uint n_tile = n / m;
+    bool downward = (m_col % 2 != 0);
+
+    uint numTrianglesPerMeshlet = n_tile * n_tile;
+    float3 faceV0 = payload.v0;
+    float3 faceV1 = payload.v1;
+    float3 faceV2 = payload.v2;
+
+    // Variabile condivisa per calcolare l'orientamento corretto della gonna
+    threadgroup float3 sharedMeshletCenter;
+    threadgroup bool isCulled = false;
+
+    // --- FRUSTUM CULLING ---
+    if (tid == 0) {
+        float3 corners_b[3];
+        if (!downward) {
+            corners_b[0] = float3(1.0 - (float)m_row / m - (float)(m_col / 2) / m, (float)(m_col / 2) / m, (float)m_row / m);
+            corners_b[1] = float3(1.0 - (float)m_row / m - (float)(m_col / 2 + 1) / m, (float)(m_col / 2 + 1) / m, (float)m_row / m);
+            corners_b[2] = float3(1.0 - (float)(m_row + 1) / m - (float)(m_col / 2) / m, (float)(m_col / 2) / m, (float)(m_row + 1) / m);
+        } else {
+            corners_b[0] = float3(1.0 - (float)(m_row + 1) / m - (float)(m_col / 2) / m, (float)(m_col / 2) / m, (float)(m_row + 1) / m);
+            corners_b[1] = float3(1.0 - (float)m_row / m - (float)(m_col / 2 + 1) / m, (float)(m_col / 2 + 1) / m, (float)m_row / m);
+            corners_b[2] = float3(1.0 - (float)(m_row + 1) / m - (float)(m_col / 2 + 1) / m, (float)(m_col / 2 + 1) / m, (float)(m_row + 1) / m);
+        }
+
+        // Calcoliamo il centro geometrico del meshlet per orientare la gonna verso l'esterno
+        float3 c0 = normalize(faceV0 * corners_b[0].x + faceV1 * corners_b[0].y + faceV2 * corners_b[0].z);
+        float3 c1 = normalize(faceV0 * corners_b[1].x + faceV1 * corners_b[1].y + faceV2 * corners_b[1].z);
+        float3 c2 = normalize(faceV0 * corners_b[2].x + faceV1 * corners_b[2].y + faceV2 * corners_b[2].z);
+        sharedMeshletCenter = normalize(c0 + c1 + c2);
+
+        bool allOutside[6] = {true, true, true, true, true, true};
+        float margin = occlusionMargin;
+
+        for (int i = 0; i < 3; ++i) {
+            float3 p_ico = normalize(faceV0 * corners_b[i].x + faceV1 * corners_b[i].y + faceV2 * corners_b[i].z);
+            auto p_planet = get_full_displaced_pos(p_ico, planetInfo, planetTex, normalTex, planetSampler, 2);
+            float4 clipPos = viewProjectionMatrix * modelMatrix * float4(p_planet, 1.0);
+            float w_margin = clipPos.w * (1.0 + margin);
+            if (clipPos.x >= -w_margin) allOutside[0] = false;
+            if (clipPos.x <=  w_margin) allOutside[1] = false;
+            if (clipPos.y >= -w_margin) allOutside[2] = false;
+            if (clipPos.y <=  w_margin) allOutside[3] = false;
+            if (clipPos.z >= 0)          allOutside[4] = false;
+            if (clipPos.z <=  w_margin) allOutside[5] = false;
+        }
+        
+        bool isThisMeshletVisible = true;
+        for (int j = 0; j < 6; ++j) {
+            if (allOutside[j]) {
+                isThisMeshletVisible = false;
+                break;
+            }
+        }
+        isCulled = !isThisMeshletVisible;
+        if (isCulled) {
+            output.set_primitive_count(0);
+        }
+    }
+    
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (isCulled) return;
+    
+    uint numVertices = (n_tile + 1) * (n_tile + 2) / 2;
+    uint numThreads = 64;
+
+    // --- GENERAZIONE VERTICI (SUPERFICIE + GONNA) ---
+    for (uint vIdx = tid; vIdx < numVertices; vIdx += numThreads) {
+        uint i_tile, j_tile;
+        uint temp = vIdx;
+        uint row_v = 0;
+        for (uint r = 0; r <= n_tile; ++r) {
+            uint vInRow = n_tile + 1 - r;
+            if (temp < vInRow) {
+                row_v = r;
+                break;
+            }
+            temp -= vInRow;
+        }
+        i_tile = row_v;
+        j_tile = temp;
+        
+        float w, u_b;
+        if (!downward) {
+            w = (float)m_row / m + (float)i_tile / n;
+            u_b = (float)(m_col / 2) / m + (float)j_tile / n;
+        } else {
+            w = (float)(m_row + 1) / m - (float)j_tile / n;
+            u_b = (float)(m_col / 2 + 1) / m - (float)i_tile / n;
+        }
+        float v_b = 1.0 - w - u_b;
+
+        auto p_ico = normalize(faceV0 * v_b + faceV1 * u_b + faceV2 * w);
+        auto p = get_full_displaced_pos(p_ico, planetInfo, planetTex, normalTex, planetSampler, 8);
+        
+        VertexOut vout;
+        float4 worldPos = modelMatrix * float4(p, 1.0);
+        auto position = jitteredViewProjectionMatrix * worldPos;
+        vout.position = position;
+        vout.worldPosition = worldPos;
+        vout.icoPosition = p_ico;
+        vout.subd = payload.subdivisionLevel;
+        vout.currentClipPosition = viewProjectionMatrix * worldPos;
+        vout.previousClipPosition = previousViewProjectionMatrix * worldPos;
+
+        // Scriviamo il vertice standard sulla superficie
+        output.set_vertex(vIdx, vout);
+
+        // Se siamo sul bordo esterno del meshlet, estrudiamo il vertice verso l'interno
+        if (planetInfo.useSkirts) {
+            bool isBoundary = (i_tile == 0) || (j_tile == 0) || (i_tile + j_tile == n_tile);
+            if (isBoundary) {
+                // Profondità della gonna proporzionale al raggio del pianeta (es. 0.8%)
+                float skirtDepth = planetInfo.planetRadius * 0.008f;
+                auto normal = normalTex.sample(planetSampler, fromPosToUV(p_ico));
+                float3 p_skirt = p - normalize(normal.xyz) * skirtDepth;
+                VertexOut vout_skirt = vout;
+                vout_skirt.position = jitteredViewProjectionMatrix * modelMatrix * float4(p_skirt, 1.0);
+                vout_skirt.worldPosition = modelMatrix * float4(p_skirt, 1.0);
+                vout_skirt.currentClipPosition = viewProjectionMatrix * modelMatrix * float4(p_skirt, 1.0);
+                vout_skirt.previousClipPosition = previousViewProjectionMatrix * modelMatrix * float4(p_skirt, 1.0);
+                // Manteniamo le coordinate sferiche originarie per evitare difetti alle normali
+                
+                // Lo specchiamo in fondo alla memoria del blocco vertici
+                output.set_vertex(numVertices + vIdx, vout_skirt);
+            }
+        }
+    }
+
+    // --- GENERAZIONE INDICI (TRIANGOLI SUPERFICIE) ---
+    for (uint tIdx = tid; tIdx < numTrianglesPerMeshlet; tIdx += numThreads) {
+        uint r_tile = 0;
+        uint temp = tIdx;
+        for (uint r = 0; r < n_tile; ++r) {
+            uint tInRow = 2 * (n_tile - r) - 1;
+            if (temp < tInRow) {
+                r_tile = r;
+                break;
+            }
+            temp -= tInRow;
+        }
+        uint c_tile = temp;
+
+        uint v_start_row = r_tile * (n_tile + 1) - (r_tile * (r_tile - 1)) / 2;
+        uint v_next_row = (r_tile + 1) * (n_tile + 1) - ((r_tile + 1) * r_tile) / 2;
+
+        if (c_tile % 2 == 0) {
+            uint j = c_tile / 2;
+            if (!downward) {
+                output.set_index(tIdx * 3 + 0, v_start_row + j);
+                output.set_index(tIdx * 3 + 1, v_start_row + j + 1);
+                output.set_index(tIdx * 3 + 2, v_next_row + j);
+            } else {
+                output.set_index(tIdx * 3 + 0, v_start_row + j);
+                output.set_index(tIdx * 3 + 1, v_next_row + j);
+                output.set_index(tIdx * 3 + 2, v_start_row + j + 1);
+            }
+        } else {
+            uint j = c_tile / 2;
+            if (!downward) {
+                output.set_index(tIdx * 3 + 0, v_start_row + j + 1);
+                output.set_index(tIdx * 3 + 1, v_next_row + j + 1);
+                output.set_index(tIdx * 3 + 2, v_next_row + j);
+            } else {
+                output.set_index(tIdx * 3 + 0, v_start_row + j + 1);
+                output.set_index(tIdx * 3 + 1, v_next_row + j);
+                output.set_index(tIdx * 3 + 2, v_next_row + j + 1);
+            }
+        }
+    }
+
+    // --- GENERAZIONE INDICI (TRIANGOLI GONNA) ---
+    if (planetInfo.useSkirts) {
+        uint totalSkirtSegments = 3 * n_tile; // 3 bordi esterni del triangolo principale
+        
+        for (uint sIdx = tid; sIdx < totalSkirtSegments; sIdx += numThreads) {
+            uint edgeId = sIdx / n_tile;
+            uint segId = sIdx % n_tile;
+            
+            uint iA = 0, jA = 0, iB = 0, jB = 0;
+            
+            // Mappiamo i tre lati esterni del meshlet
+            if (edgeId == 0) {       // Lato Inferiore
+                iA = 0; jA = segId;
+                iB = 0; jB = segId + 1;
+            } else if (edgeId == 1) { // Lato Sinistro
+                iA = segId; jA = 0;
+                iB = segId + 1; jB = 0;
+            } else {                  // Lato Diagonale
+                iA = segId; jA = n_tile - segId;
+                iB = segId + 1; jB = n_tile - (segId + 1);
+            }
+            
+            // Formula matematica diretta per convertire (i, j) in indice lineare senza loop
+            uint A = iA * (n_tile + 1) - (iA * (iA - 1)) / 2 + jA;
+            uint B = iB * (n_tile + 1) - (iB * (iB - 1)) / 2 + jB;
+            
+            uint A_skirt = numVertices + A;
+            uint B_skirt = numVertices + B;
+            
+            // Ricostruiamo al volo la posizione sferica per capire l'orientamento
+            float wA, u_bA;
+            if (!downward) {
+                wA = (float)m_row / m + (float)iA / n;
+                u_bA = (float)(m_col / 2) / m + (float)jA / n;
+            } else {
+                wA = (float)(m_row + 1) / m - (float)jA / n;
+                u_bA = (float)(m_col / 2 + 1) / m - (float)iA / n;
+            }
+            float3 pA_ico = normalize(faceV0 * (1.0 - wA - u_bA) + faceV1 * u_bA + faceV2 * wA);
+            
+            float wB, u_bB;
+            if (!downward) {
+                wB = (float)m_row / m + (float)iB / n;
+                u_bB = (float)(m_col / 2) / m + (float)jB / n;
+            } else {
+                wB = (float)(m_row + 1) / m - (float)jB / n;
+                u_bB = (float)(m_col / 2 + 1) / m - (float)iB / n;
+            }
+            float3 pB_ico = normalize(faceV0 * (1.0 - wB - u_bB) + faceV1 * u_bB + faceV2 * wB);
+            
+            // Calcoliamo la direzione che punta "fuori" dal perimetro del meshlet
+            float3 edgeMidpoint = normalize(pA_ico + pB_ico);
+            float3 outwardDir = normalize(edgeMidpoint - sharedMeshletCenter);
+            
+            // Calcolo del vettore normale del muro della gonna (il muro va da A a B, e scende verso il centro: -pA_ico)
+            float3 N_wall = cross(pB_ico - pA_ico, -pA_ico);
+            
+            // Gli indici della gonna partono subito dopo quelli del meshlet di superficie
+            uint tIdx1 = numTrianglesPerMeshlet + sIdx * 2;
+            uint tIdx2 = tIdx1 + 1;
+            
+            // Controllo del Winding Order dinamico: impedisce il Backface Culling errato
+            if (dot(N_wall, outwardDir) >= 0.0f) {
+                output.set_index(tIdx1 * 3 + 0, A);
+                output.set_index(tIdx1 * 3 + 1, B);
+                output.set_index(tIdx1 * 3 + 2, A_skirt);
+                
+                output.set_index(tIdx2 * 3 + 0, B);
+                output.set_index(tIdx2 * 3 + 1, B_skirt);
+                output.set_index(tIdx2 * 3 + 2, A_skirt);
+            } else {
+                output.set_index(tIdx1 * 3 + 0, A);
+                output.set_index(tIdx1 * 3 + 1, A_skirt);
+                output.set_index(tIdx1 * 3 + 2, B);
+                
+                output.set_index(tIdx2 * 3 + 0, B);
+                output.set_index(tIdx2 * 3 + 1, A_skirt);
+                output.set_index(tIdx2 * 3 + 2, B_skirt);
+            }
+        }
+    }
+
+    // --- RILASCIO CONTEGGI FINALI ALLA GPU ---
+    threadgroup_barrier(mem_flags::mem_none);
+    if (tid == 0) {
+        uint finalVertices = numVertices;
+        uint finalPrimitives = numTrianglesPerMeshlet;
+        if (planetInfo.useSkirts) {
+            finalVertices = numVertices * 2;
+            finalPrimitives = numTrianglesPerMeshlet + (3 * n_tile * 2);
+        }
+        output.set_primitive_count(finalPrimitives);
+    }
+}
 
 
 float3 ACESFilm(float3 x) {
@@ -473,68 +782,14 @@ float3 ACESFilm(float3 x) {
     return saturate((x * (a * x + b)) / (x * (c * x + d) + e));
 }
 
-// =================================================================
-// CALCOLO PROCEDURALE DELL'ORIZZONTE (OBJECT-SPACE HO)
-// =================================================================
-float calculateProceduralHorizonOcclusion(
-    float3 p_ico,
-    float3 N,
-    CompactPlanetInfo info,
-    texture2d<float> planetTex,
-    texture2d<float> normalTex,
-    sampler planetSampler
-) {
-    // 1. Generiamo una base tangente locale alla sfera per muoverci a raggiera
-    float3 up = abs(p_ico.z) < 0.999f ? float3(0.0f, 0.0f, 1.0f) : float3(1.0f, 0.0f, 0.0f);
-    float3 T = normalize(cross(up, p_ico));
-    float3 B = cross(p_ico, T);
-    
-    // Campioniamo la nostra posizione attuale a ottave ridotte (es. 4) per inseguire la macro-geometria
-    float3 currentPos = get_full_displaced_pos(p_ico, info, planetTex, normalTex, planetSampler, 4);
-    
-    float occlusionAccum = 0.0f;
-    const int numDirections = 4; // Nord, Sud, Est, Ovest sulla superficie
-    const int numSteps = 3;      // Quanti passi facciamo verso l'esterno
-    const float stepSize = 0.004f; // Quanto ampio è il raggio di ricerca del cratere
-    
-    float3 dirs[4] = { T, -T, B, -B };
-    
-    // 2. Raymarching a raggiera
-    for (int d = 0; d < numDirections; ++d) {
-        float maxHorizonSin = 0.0f;
-        
-        for (int s = 1; s <= numSteps; ++s) {
-            // Camminiamo sulla sfera di base
-            float3 sampleIco = normalize(p_ico + dirs[d] * (stepSize * (float)s));
-            // Troviamo la quota del terreno in quel punto vicino (sempre a ottave basse)
-            float3 samplePos = get_full_displaced_pos(sampleIco, info, planetTex, normalTex, planetSampler, 4);
-            
-            // Vettore che va dal nostro pixel al picco vicino
-            float3 horizonVec = samplePos - currentPos;
-            float dist = length(horizonVec);
-            
-            if (dist > 1e-4f) {
-                horizonVec /= dist;
-                // Più il vettore punta nella direzione della normale N, più la montagna è alta rispetto a noi
-                float horizonSin = max(0.0f, dot(horizonVec, N));
-                
-                // Attenuazione basata sulla distanza (montagne troppo lontane occludono meno)
-                horizonSin /= (1.0f + dist * 5.0f);
-                
-                maxHorizonSin = max(maxHorizonSin, horizonSin);
-            }
-        }
-        occlusionAccum += maxHorizonSin;
-    }
-    
-    // Restituisce un fattore di visibilità tra 0.0 (totalmente occluso/buio) e 1.0 (cielo aperto)
-    return saturate(1.0f - (occlusionAccum / (float)numDirections) * 2.0f);
-}
-
+struct FragmentOut {
+    float4 color [[color(0)]];        // Colore visibile a schermo
+    float2 motionVector [[color(1)]]; // La nostra texture RG16Float
+};
 
 // --- FRAGMENT SHADER ---
 [[fragment]]
-float4 planet_fragment_shader(
+FragmentOut planet_fragment_shader(
     VertexOut in [[stage_in]],
     constant ShadowData& shadowData [[buffer(23)]],
     constant PointShadowData& pointShadowData [[buffer(24)]],
@@ -545,11 +800,16 @@ float4 planet_fragment_shader(
     constant CompactPlanetInfo& planetInfo [[buffer(13)]],
     constant BVHNode* data [[buffer(14)]],
     constant Triangle* primitives [[buffer(15)]],
+    constant PotentialSamplingInfo& potentialSamplingInfo [[buffer(16)]],
+    constant AtmosphereSettings& atmosphereSettings [[buffer(21)]],
     texture2d<float> planetTex [[texture(2)]],
     texture2d<float> normalTex [[texture(3)]],
+    texture3d<float> densityTexture [[texture(4)]],
+    texture3d<float> lightTransmittanceTexture [[texture(5)]],
     depth2d_array<float> shadowMaps [[texture(0)]],
     depthcube_array<float> cubeMaps [[texture(1)]],
-    sampler planetSampler [[sampler(0)]]
+    sampler planetSampler [[sampler(0)]],
+    sampler densitySampler [[sampler(1)]]
 ) {
     auto geometricN = -normalize(cross(dfdx(in.worldPosition.xyz), dfdy(in.worldPosition.xyz)));
     auto eye = (in.worldPosition - cameraPosition).xyz;
@@ -564,7 +824,7 @@ float4 planet_fragment_shader(
     float3 e1;
     float3 e2;
     int attempts = 1;
-    float3 worldPos;
+    float4 worldPos = float4(0.0, 0.0, 0.0, 1.0);
     
     while (attempts > 0) {
         attempts--;
@@ -581,7 +841,7 @@ float4 planet_fragment_shader(
         auto d = get_full_displaced_pos(fromUVToPos(uv_minus_v), planetInfo, planetTex, normalTex, planetSampler, octaves);
         e2 = c - d;
         
-        worldPos = (a + b + c + d) / 4.0;
+        worldPos.xyz = (a + b + c + d) / 4.0;
             
         if (length(e1) < 1e-5) {
             delta *= 2;
@@ -601,57 +861,115 @@ float4 planet_fragment_shader(
     }
     if (dot(N, eye) > 0 and dot(geometricN, eye) < 0) N = mix(N, geometricN, 0.5);
     
-    float4 color = getRockyPlanetColor(in.worldPosition.xyz, N);
+    float4 color = getRockyPlanetColor(worldPos.xyz, N);
     color = float4(0.5, 0.5, 0.5, 1.0);
+    
+    // ////////////////////////////////////////////////////////////////////////////////////
+    // --- PRE-CALCOLO ATMOSFERA E TRASMITTANZA ---
+    // ////////////////////////////////////////////////////////////////////////////////////
+        
+    float3 planetCenter = float3(0.0f, 0.0f, 0.0f);
+    const float R_atmo = potentialSamplingInfo.nonZeroDensityRadius;
+    float3 betaR = float3(0.148f, 0.344f, 0.844f);
+    float3 I_sun = lights.directionalLights[0].color.xyz;
 
-    float haoFactor = 1.0f;
-    // Horizon-Based Ambient Occlusion
-    if (planetInfo.useHBAO > 0) {
-        haoFactor = calculateProceduralHorizonOcclusion(
-                                                              in.icoPosition,
-                                                              N,
-                                                              planetInfo,
-                                                              planetTex,
-                                                              normalTex,
-                                                              planetSampler
-                                                              );
+    float3 rayOrigin = cameraPosition.xyz;
+    float3 rayDir = normalize(worldPos.xyz - cameraPosition.xyz);
+    float3 L = normalize(-lights.directionalLights[0].direction);
+    
+    float t_atmo_entry = 0.0f;
+    float t_atmo_exit = 0.0f;
+    raySphereIntersect(rayOrigin, rayDir, planetCenter, R_atmo, t_atmo_entry, t_atmo_exit);
+
+    float t_start = max(0.0f, t_atmo_entry);
+    float t_end = distance(rayOrigin, worldPos.xyz);
+
+    // Fissato a 0.5f come da tua richiesta per eliminare il rumore temporale a terra
+    //auto jitter = interleavedGradientNoise(in.position.xy);
+    auto jitter = smoothNoise(worldPos.xyz * 1000.0);
+    if (not atmosphereSettings.jitter) jitter = 0.5f;
+
+    float3 accumulatedScattering = float3(0.0f);
+    float3 transmittanceCamera = float3(1.0f);
+    float3 T_sun_to_surface = float3(1.0f);
+
+    if (t_start < t_end) {
+        const int SAMPLES = atmosphereSettings.SAMPLES;
+        const int SUN_SAMPLES = atmosphereSettings.SUN_SAMPLES;
+        float stepLength = (t_end - t_start) / float(SAMPLES);
+            
+        float mu = dot(rayDir, L);
+        float phaseR = 0.75f * (1.0f + mu * mu) / (4.0f * 3.14159265f);
+
+        for (int i = 0; i < SAMPLES; i++) {
+            float t = t_start + stepLength * (float(i) + jitter);
+            float3 P = rayOrigin + rayDir * t;
+                    
+            float3 uvw = (P - potentialSamplingInfo.min.xyz) / potentialSamplingInfo.edge;
+                    
+            float density = 0.0f;
+            if (all(uvw >= 0.0f) && all(uvw <= 1.0f)) {
+                density = sampleDensitySmooth3D(densityTexture, densitySampler, uvw);
+            }
+
+            float3 stepOpticalDepth = betaR * density * stepLength;
+                    
+            float3 T_sun;
+            if (not atmosphereSettings.useBakedLightTransmittance) {
+                T_sun = lightTransmittance(
+                                                  P, L, potentialSamplingInfo, betaR, densityTexture, densitySampler, jitter, shadowMaps, shadowData, lights.numDirectionalLights, baseNormal, false, 1.0f, 0.01f, false, SUN_SAMPLES
+                                                  );
+            } else {
+                T_sun = lightTransmittanceFromTexture(P, potentialSamplingInfo, lightTransmittanceTexture, densitySampler, betaR);
+            }
+                    
+            accumulatedScattering += T_sun * transmittanceCamera * (betaR * density * stepLength) * phaseR * I_sun;
+            transmittanceCamera *= exp(-stepOpticalDepth);
+        }
+
+        // Calcoliamo il filtraggio solare direttamente sulla superficie
+        float3 T_sun_to_surface;
+        if (not atmosphereSettings.useBakedLightTransmittance) {
+            T_sun_to_surface = lightTransmittance(worldPos.xyz, L, potentialSamplingInfo, betaR, densityTexture, densitySampler, jitter, shadowMaps, shadowData, lights.numDirectionalLights, baseNormal, false, 1.0, 0.01f, false, SUN_SAMPLES
+                                                  );
+        } else {
+            T_sun_to_surface = lightTransmittanceFromTexture(worldPos.xyz, potentialSamplingInfo, lightTransmittanceTexture, densitySampler, betaR);
+        }
     }
     
-
-
     auto c = applyFULLSHADOWWARDLightsWithOrenNayar(
-        float4(worldPos, 1.0),
-        color,
-        normalize(float4(N, 0.0)),
-        roughness,
-        metallic,
-        cameraPosition,
-        lights,
-        shadowData,
-        pointShadowData,
-        shadowMaps,
-        cubeMaps,
-        planetSampler,
-        haoFactor,
-        data,
-        primitives,
-        planetInfo.useRayTracingShadows
+            {color, normalize(float4(N, 0.0)), worldPos},
+            roughness,
+            metallic,
+            cameraPosition,
+            lights,
+            T_sun_to_surface,
+            shadowData,
+            pointShadowData,
+            shadowMaps,
+            cubeMaps,
+            planetSampler,
+            data,
+            primitives,
+            planetInfo.useRayTracingShadows,
+            0.0f,
+            0.01f, false
     );
+        
+    // --- BLENDING ATMOSFERICO FINALE ---
+    if (t_start < t_end) {
+            // Applichiamo l'estinzione della camera sulla luce riflessa dal terreno e sommiamo l'aria luminosa
+        c.xyz = c.xyz * transmittanceCamera + accumulatedScattering;
+    }
+        
+    // Dithering sicuro solo sui canali colore (evita di corrompere l'Alpha)
+    c.xyz += (jitter - 0.5f) / 255.0f;
     
     auto tonemapped = ACESFilm(c.xyz);
     
-    /*
-    float3 V = normalize(cameraPosition - in.worldPosition).xyz;
-    // Trucco analitico per l'alone del bordo (Rim Light Atmosferica)
-    float rim = 1.0f - saturate(dot(N, V));
-    rim = pow(rim, 4.0f); // Rende l'alone molto stretto sul bordo
+    FragmentOut fOut;
+    fOut.color = float4(tonemapped, 1.0);
+    fOut.motionVector = motionVector(in.currentClipPosition, in.previousClipPosition);
 
-    // Accendi l'alone solo se la luce del sole colpisce quel lato del pianeta
-    float sunFacing = saturate(dot(N, -lights.directionalLights[0].direction));
-
-    float3 atmosphereColor = float3(0.2f, 0.5f, 0.7f); // Un bel blu Rayleigh
-    tonemapped += atmosphereColor * rim * sunFacing * 2.0f;
-     */
-    
-    return float4(tonemapped, 1.0);
+    return fOut;
 }
