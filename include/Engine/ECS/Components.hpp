@@ -13,7 +13,6 @@
 #include <btBulletCollisionCommon.h>
 #include <btBulletDynamicsCommon.h>
 #include <memory>
-
 #include "BVH.hpp"
 #include "Rendering/Material.hpp"
 
@@ -23,7 +22,18 @@ namespace Core {
 }
 
 
-struct BVHRequestComponent {};
+struct RenderingSettingsComponent
+{
+    float TAAScaling = 0.75f;
+    bool useTAAScaling = true;
+};
+
+struct BVHRequestComponent
+{
+    std::shared_ptr<Geometry::Mesh> mesh;
+    int primitivesPerLeaf;
+};
+
 struct BVHComponent
 {
     BVH bvh;
@@ -39,7 +49,7 @@ struct PlanetConfigComponent {
     int nParallels = 15;
     int nMeridians = 15;
     float baseRadius = 250.0f;
-    int nMutations = 0;
+    int nMutations = 30;
     int textureSize = 512;
     bool isDirty = true;
 };
@@ -72,7 +82,7 @@ struct RenderConfigComponent
     RenderConfigComponent() = delete;
     RenderConfigComponent(
         const std::string& psoName,
-        bool castShadow = false,
+        uint32_t castShadow = 0,
         Rendering::RenderLayer layer = Rendering::RenderLayer::OPAQUE
         ) :
             psoName(psoName),
@@ -80,10 +90,20 @@ struct RenderConfigComponent
             visible(true),
             castShadow(castShadow)
     {}
+    RenderConfigComponent(
+        const std::string& psoName,
+        bool castShadow,
+        Rendering::RenderLayer layer = Rendering::RenderLayer::OPAQUE
+        ) :
+            psoName(psoName),
+            layer(layer),
+            visible(true),
+            castShadow(castShadow ? 0xFFFFFFFF : 0)
+    {}
     std::string psoName;
     Rendering::RenderLayer layer;
     bool visible;
-    bool castShadow = false;
+    uint32_t castShadow = 0;
     bool wireframe = false;
     glm::ivec3 gridSize = glm::ivec3(0, 0, 0);
     glm::ivec3 threadgroupSize = glm::ivec3(0, 0, 0);
@@ -123,6 +143,20 @@ struct Transform
         model = glm::scale(model, scale);
         return model;
     }
+    [[nodiscard]] glm::vec3 front() const
+    {
+        return rotation * glm::vec3(0.0f, 0.0f, -1.0f);
+    }
+    [[nodiscard]] glm::vec3 right() const
+    {
+        return rotation * glm::vec3(1.0f, 0.0f, 0.0f);
+    }
+    [[nodiscard]] glm::vec3 up() const
+    {
+        return rotation * glm::vec3(0.0f, 1.0f, 0.0f);
+    }
+
+    glm::mat4 previousModelMatrix = glm::mat4(1.0f);
 };
 
 struct TexturesRequestComponent
@@ -154,14 +188,20 @@ struct CameraComponent
     std::shared_ptr<Camera> camera;
 };
 
+struct DirectionalLightPassSettings
+{
+    float distance = 250.0f;
+    float nearPlane = 1.0f;
+    float farPlane = 500.0f;
+    float orthoSize = 250.0f;
+    glm::vec3 center = glm::vec3(0.0f, 0.0f, 0.0f);
+};
 struct DirectionalLightComponent
 {
     DirectionalLight light = DirectionalLight();
     float intensity = 1.0f;
-    float distance = 250.0f; //distance from origin along light -dir light direction
-    float nearPlane = 1.0f;
-    float farPlane = 500.0f;
-    float orthoSize = 250.0f; // size of the orthographic projection for shadow mapping
+    int nPasses = 1;
+    DirectionalLightPassSettings settings[4];
 };
 
 struct PointLightComponent
@@ -266,6 +306,13 @@ struct ViewportSizeMaterialComponent
     ViewportSize material = ViewportSize();
 };
 
+struct BillboardMaterialComponent
+{
+    BillBoardMaterial material;
+    BillboardMaterialComponent(BillBoardMaterial m) : material(m) {}
+    BillboardMaterialComponent() = default;
+};
+
 // MATERIAL COMPONENTS
 struct TintMaterialComponent
 {
@@ -301,6 +348,7 @@ struct WardMaterialComponent
     WardMaterialComponent() = default;
     float roughness = 0.5f;
     float metallic = 0.0f;
+    float alpha = 1.0f;
 };
 
 
@@ -310,7 +358,9 @@ enum class ColliderType
     NONE,
     SPHERE,
     BOX,
-    MESH
+    MESH,
+    BVH,
+    HULL
 };
 
 struct Collider
@@ -375,6 +425,51 @@ struct RigidBodyComponent
     }
 };
 
+struct ChildComponent
+{
+    uint64_t parent = 0;
+    Transform localTransform = Transform();
+};
+
+struct UnlitMaterialComponent
+{
+    glm::vec4 color = glm::vec4(1.0f, 0.0f, 1.0f, 1.0f);
+};
+
+struct ParticleComponent
+{
+    float softness = 0.0f;
+};
+
+struct OctreeComponent
+{
+    std::vector<int> octree;
+    glm::vec3 min;
+    float edge;
+    float multiplier = 1.0f;
+    float debugPotential = 0.0f;
+};
+
+struct PotentialSamplingInfoComponent
+{
+    PotentialSamplingInfo material;
+};
+
+struct PotentialFieldComponent
+{
+    std::shared_ptr<Texture> potentialTexture = nullptr;
+    float debugValue = 0.0f;
+};
+
+struct PlayerComponent
+{
+
+};
+
+struct AtmosphereSettingsComponent
+{
+    AtmosphereSettings settings;
+};
 
 
 
