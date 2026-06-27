@@ -8,7 +8,7 @@
 #include <metal_stdlib>
 #include <metal_geometric>
 #include <metal_matrix>
-#include <bvh.hpp>
+#include "bvh.hpp"
 
 using namespace metal;
 
@@ -494,25 +494,37 @@ static inline float3 calculateOrenNayarDiffuse(float3 N, float3 L, float3 V, flo
     return albedo * (diffuse_factor * (1.0f / 3.14159265f));
 }
 
+struct FragmentData {
+    float4 color;
+    float4 normal;
+    float4 worldPosition;
+};
 
-static inline float4 applyFULLSHADOWWARDLightsWithOrenNayar(
-                        thread float4 worldPosition,
-                        thread float4 color,
-                        thread float4 normal,
-                        constant float& roughness,
-                        constant float& metallic,
+inline float4 applyFULLSHADOWWARDLightsWithOrenNayar(
+                        FragmentData fg,
+                        float roughness,
+                        float metallic,
                         constant float4& cameraPosition,
                         constant Lights& lights,
+                        float3 sunMultiplier,
                         constant ShadowData& shadowData,
                         constant PointShadowData& pointShadowData,
                         depth2d_array<float> shadowMaps,
                         depthcube_array<float> cubeMaps,
                         sampler textureSampler,
-                        float hbao,
                         constant BVHNode* bvhNodes,
                         constant Triangle* bvhPrimitives,
-                        int useRayTracedShadow
+                        int useRayTracedShadow,
+                        float biasedWorldPosOffset,
+                        float shadowBias,
+                        bool shadowFrontCulling = false
                    ) {
+    if (shadowFrontCulling) shadowBias = -shadowBias;
+    
+    auto color = fg.color;
+    auto worldPosition = fg.worldPosition;
+    auto normal = fg.normal;
+    
     float3 baseColor = color.xyz;
     
     // rho_diffuse
@@ -532,99 +544,94 @@ static inline float4 applyFULLSHADOWWARDLightsWithOrenNayar(
     float3 N = normalize(normal.xyz);
     float dotNV = dot(N, V);
 
-    float3 C;
 
-    // DIFFUSE
-    // DIRECTIONAL
-    for (int i = 0; i < lights.numDirectionalLights; ++i) {
-        C = lights.directionalLights[i].color.rgb;
-        //if (length(C) < 0.01) continue;
-        if (dotNV <= 0) continue;
-        float3 L = -normalize(lights.directionalLights[i].direction);
-        float dotNL = dot(L, N);
-        if (dotNL <= 0) continue;
-        
-        // APPLY FORCE SHADOW
-        if (useRayTracedShadow > 0 and intersect((worldPosition + normal * 1.0).xyz, L, bvhNodes, bvhPrimitives)) continue;
-        
-        //if (hbao < 0.96) break;
-        
-        // APPLY SHADOW
-        // Sposta la posizione del frammento leggermente verso l'esterno lungo la normale della superficie
-        // per "sollevare" matematicamente il calcolo sopra lo spessore del gradino della shadow map
-        float3 biasedWorldPos = worldPosition.xyz + normal.xyz * 1.0f;
-
-        // Ricalcola le coordinate di campionamento shadowUV e la currentDepth usando biasedWorldPos...
-        float4 lightSpacePos = shadowData.viewProjectionMatrix[i] * float4(biasedWorldPos, 1.0);
-        float3 ndc = lightSpacePos.xyz / lightSpacePos.w;
-
-        float2 shadowUV;
-        shadowUV.x =  ndc.x * 0.5 + 0.5;   // [-1,+1] → [0,1]
-        shadowUV.y = -ndc.y * 0.5 + 0.5;   // [-1,+1] → [0,1] con Y invertita
-        
-        float currentDepth = ndc.z;
+    bool usePCF = true;
     
-        float shadowFactor = 1.0f;
-        
-        bool usePCF = true;
-        // Bias dinamico basato sull'inclinazione per evitare shadow acne
-        float bias = 0.002f * clamp(1.0 - dotNL, 0.0, 1.0);
-        
-        if (shadowUV.x > 0.0 and shadowUV.x < 1.0 and
-            shadowUV.y > 0.0 and shadowUV.y < 1.0 and
-            currentDepth > 0.0 and currentDepth < 1.0) {
-        
-            
-            if (usePCF) {
-                float shadowAccum = 0.0;
+    // DIRECTIONAL
+    float3 C = lights.directionalLights[0].color.rgb;
+    C *= sunMultiplier;
+    float3 L = -normalize(lights.directionalLights[0].direction);
+    float shadowFactor = 1.0f;
+    float dotNL = dot(L, N);
+    if (dotNL > 0)
+    {
+        // APPLY FORCE SHADOW
+        if (useRayTracedShadow > 0 and intersect((worldPosition + normal * 1.0).xyz, L, bvhNodes, bvhPrimitives)) {
+            shadowFactor = 0.0f;
+        } else {
+            for (int i = 0; i < lights.numDirectionalLights; i++) {
+                float3 biasedWorldPos = worldPosition.xyz + normal.xyz * biasedWorldPosOffset;
+                float4 lightSpacePos = shadowData.viewProjectionMatrix[i] * float4(biasedWorldPos, 1.0);
+                float3 ndc = lightSpacePos.xyz / lightSpacePos.w;
                 
-                // Calcola la dimensione di un singolo texel nella shadow map
-                // Se la tua texture è 1024x1024, il texel è 1.0/1024.0
-                float texelSize = 1.0 / 4096.0;
+                float2 shadowUV;
+                shadowUV.x =  ndc.x * 0.5 + 0.5;   // [-1,+1] → [0,1]
+                shadowUV.y = -ndc.y * 0.5 + 0.5;   // [-1,+1] → [0,1] con Y invertita
                 
-                // Loop PCF 3x3
-                for(int x = -1; x <= 1; ++x) {
-                    for(int y = -1; y <= 1; ++y) {
-                        float2 offset = float2(x, y) * texelSize;
-                        float pcfDepth = shadowMaps.sample(textureSampler, shadowUV + offset, i);
-                        shadowAccum += (currentDepth > pcfDepth + bias) ? 0.0 : 1.0;
+                float currentDepth = ndc.z;
+                
+                if (shadowUV.x > 0.0 and shadowUV.x < 1.0 and
+                    shadowUV.y > 0.0 and shadowUV.y < 1.0 and
+                    currentDepth > 0.0 and currentDepth < 1.0) {
+                    
+                    if (usePCF) {
+                        float shadowAccum = 0.0;
+                        
+                        // Calcola la dimensione di un singolo texel nella shadow map
+                        // Se la tua texture è 1024x1024, il texel è 1.0/1024.0
+                        float texelSize = 1.0 / 4096.0;
+                        
+                        // Loop PCF 3x3
+                        for(int x = -1; x <= 1; ++x) {
+                            for(int y = -1; y <= 1; ++y) {
+                                float2 offset = float2(x, y) * texelSize;
+                                float pcfDepth = shadowMaps.sample(textureSampler, shadowUV + offset, i);
+                                shadowAccum += (currentDepth > pcfDepth + shadowBias) ? 0.0 : 1.0;
+                            }
+                        }
+                        
+                        // Fai la media dei 9 campionamenti
+                        shadowFactor = shadowAccum / 9.0;
+                    } else {
+                        
+                        float shadowMapDepth = shadowMaps.sample(textureSampler, shadowUV, i);
+                        if (currentDepth > shadowMapDepth + shadowBias) {
+                            shadowFactor = 0.0f;
+                        }
                     }
-                }
-                
-                // Fai la media dei 9 campionamenti
-                shadowFactor = shadowAccum / 9.0;
-            } else {
-                
-                float shadowMapDepth = shadowMaps.sample(textureSampler, shadowUV, i);
-                if (currentDepth > shadowMapDepth + bias) {
-                    continue;
+                    break;
                 }
             }
         }
-        
+            
         // DIFFUSE
         color.rgb += (rho_d / 3.14f) * C * dotNL * shadowFactor;
-        
-        // SPECULAR
-        float3 H = normalize(L + V); // half vector
-        float dotNH = dot(H, N);
-        float dotNH2 = dotNH * dotNH;
-        float tan2ThetaH = (1.0 - dotNH2) / dotNH2;
-
-        float exponent = -tan2ThetaH / alpha2;
-        float D = exp(exponent) / (4.0f * 3.1415 * alpha2 * sqrt(dotNL * dotNV));
-
-        color.rgb += C * D * rho_s * dotNL * shadowFactor;
+            
+        if (dotNV > 0.0) { // skip specular if dotnv < 0
+            
+            // SPECULAR
+            float3 H = normalize(L + V); // half vector
+            float dotNH = dot(H, N);
+            float dotNH2 = dotNH * dotNH;
+            float tan2ThetaH = (1.0 - dotNH2) / dotNH2;
+            
+            float exponent = -tan2ThetaH / alpha2;
+            float D = exp(exponent) / (4.0f * 3.1415 * alpha2 * sqrt(dotNL * dotNV));
+            
+            color.rgb += C * D * rho_s * dotNL * shadowFactor;
+        }
     }
+    
+    float diskRadius = 0.005;
+    
     // POINT LIGHTS
     for (int i = 0; i < lights.numPointLights; ++i) {
         C = lights.pointLights[i].color.rgb;
-        //if (length(C) < 0.01f) continue;
-        if (dotNV <= 0) continue;
+        if (length(C) < 0.01f) continue;
         
         float3 LnotNorm = lights.pointLights[i].position - worldPosition.xyz;
         
-        auto cubeMapDistance = cubeMaps.sample(textureSampler, -LnotNorm, i);
+        //auto cubeMapDistance = cubeMaps.sample(textureSampler, -LnotNorm, i);
         float distance = length(LnotNorm);
         auto farDistance = distance / pointShadowData.farPlanes[i].x;
         
@@ -637,10 +644,9 @@ static inline float4 applyFULLSHADOWWARDLightsWithOrenNayar(
             float3( 1,  1,  1), float3( 1, -1,  1), float3(-1, -1,  1), float3(-1,  1,  1),
             float3( 1,  1, -1), float3( 1, -1, -1), float3(-1, -1, -1), float3(-1,  1, -1)
         };
-        float diskRadius = 0.005; // Regola questo valore per la morbidezza
 
         float shadowAccum = 0.0;
-        float3 sampleDir = -LnotNorm;
+        float3 sampleDir = normalize(-LnotNorm);
 
         for (int j = 0; j < 8; j++) {
             // Campiona la cubemap con un leggero offset
@@ -648,7 +654,7 @@ static inline float4 applyFULLSHADOWWARDLightsWithOrenNayar(
             
             // Usa il bias che abbiamo trovato (0.005)
             if (farDistance <= 1.0f) {
-                shadowAccum += (farDistance > pcfDepth + 0.005f) ? 0.0 : 1.0;
+                shadowAccum += (farDistance > pcfDepth + shadowBias) ? 0.0 : 1.0;
             } else {
                 shadowAccum += 1.0;
             }
@@ -666,6 +672,9 @@ static inline float4 applyFULLSHADOWWARDLightsWithOrenNayar(
         
         // DIFFUSE
         color.rgb += CD * dotNL * shadowFactor;
+        
+        // skip specular if dotNV <= 0
+        if (dotNV <= 0) continue;
         
         // SPECULAR
         float3 H = normalize(L + V); // Vettore somma (non normalizzato nella tua formula)
