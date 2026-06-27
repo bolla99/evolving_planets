@@ -97,6 +97,19 @@ namespace Rendering
                     }
                 }
             }
+        ),
+            std::make_pair<std::string, const VertexDescriptor>(
+                "PN", // { position, uv } non interleaved
+                VertexDescriptor{
+                {
+                    {
+                        {Position, Float3, 0}
+                    },
+                    {
+                        {Normal, Float3, 1}
+                    }
+                }
+            }
         )
     };
         return vertexDescriptors;
