@@ -13,6 +13,10 @@ struct VertexOut {
     float4 normal;
     float4 color;
     float2 uv;
+    float3 localPosition;
+    float3 instanceWorldPosition [[flat]];
+    float4 currentClipPosition;
+    float4 previousClipPosition;
 };
 
 vertex VertexOut vertexWARD(
@@ -81,26 +85,27 @@ float3 rockyfyNormal(float3 p, float3 normal) {
 }
 
 vertex VertexOut vertexWARDSHADOW(
-    VertexPCNUV vertexIn [[stage_in]],
-    constant float3x3& normalMatrix [[buffer(27)]],
-    constant float4x4& modelMatrix [[buffer(28)]],
-    constant float4x4& viewMatrix [[buffer(29)]],
-    constant float4x4& projectionMatrix [[buffer(30)]]
+    VertexPCNUV in [[stage_in]],
+    constant float4x4& previousModelMatrix [[buffer(25)]],
+    constant float3x3& normalMatrix [[buffer(26)]],
+    constant float4x4& modelMatrix [[buffer(27)]],
+    constant float4x4& viewProjectionMatrix [[buffer(28)]],
+    constant float4x4& previousViewProjectionMatrix [[buffer(29)]],
+    constant float4x4& jitteredViewProjectionMatrix [[buffer(30)]]
 ) {
-    //float3 rockyfiedPosition = rockyfyPosition(vertexIn.position, vertexIn.normal);
-    //float3 rockyfiedNormal = rockyfyNormal(vertexIn.position, vertexIn.normal);
-    float3 rockyfiedPosition = vertexIn.position;
-    float3 rockyfiedNormal = vertexIn.normal;
-    
-    VertexOut vertexOut;
+    VertexOut out;
     // position
-    vertexOut.worldPosition = (modelMatrix * float4(rockyfiedPosition, 1.0f));
-    vertexOut.position = projectionMatrix * viewMatrix * vertexOut.worldPosition;
-    vertexOut.color = vertexIn.color;
-    vertexOut.normal = normalize(float4(float3x3(normalMatrix) * rockyfiedNormal, 0.0f));
-    vertexOut.uv = vertexIn.uv;
-    
-    return vertexOut;
+    out.worldPosition = (modelMatrix * float4(in.position, 1.0f));
+    out.position = jitteredViewProjectionMatrix * out.worldPosition;
+    out.color = in.color;
+    out.normal = normalize(float4(float3x3(normalMatrix) * in.normal, 0.0f));
+    out.uv = in.uv;
+    out.instanceWorldPosition = modelMatrix.columns[3].xyz;
+    out.localPosition = in.position;
+    out.currentClipPosition = viewProjectionMatrix * modelMatrix * float4(in.position, 1.0);
+    out.previousClipPosition = previousViewProjectionMatrix * previousModelMatrix * float4(in.position, 1.0);
+
+    return out;
 }
 
 fragment float4 fragmentVCWARDSHADOW(
@@ -125,8 +130,14 @@ fragment float4 fragmentVCWARDSHADOW(
                                  );
 }
 
-fragment float4 fragmentVCWARDFULLSHADOW(
-        VertexOut vertexOut [[stage_in]],
+struct FragmentOut {
+    float4 color [[color(0)]];        // Colore visibile a schermo
+    float2 motionVector [[color(1)]]; // La nostra texture RG16Float
+};
+
+fragment FragmentOut fragmentVCWARDFULLSHADOW(
+        VertexOut in [[stage_in]],
+        constant float& alpha [[buffer(22)]],
         constant ShadowData& shadowData [[buffer(23)]],
         constant PointShadowData& pointShadowData [[buffer(24)]],
         constant float& roughness [[buffer(25)]],
@@ -137,19 +148,37 @@ fragment float4 fragmentVCWARDFULLSHADOW(
         depthcube_array<float> cubeMaps [[texture(1)]],
         sampler textureSampler [[sampler(0)]]
 ) {
-    //return float4(vertexOut.normal.xyz * 0.5 + 0.5, 1.0);
-    return applyFULLSHADOWWARDLights(
-                                 vertexOut.worldPosition,
-                                 vertexOut.color,
-                                 vertexOut.normal,
-                                 roughness, metallic,
-                                 cameraPosition, lights,
+    
+    float3 finalAlbedo = in.color.xyz;
+    float finalRoughness = roughness;
+    float finalMetallic = metallic;
+    
+    auto c = applyFULLSHADOWWARDLightsWithOrenNayar(
+                                {float4(finalAlbedo, 1.0), in.normal, in.worldPosition},
+                                 finalRoughness, finalMetallic,
+                                 cameraPosition, lights, float3(1.0),
                                  shadowData,
                                  pointShadowData,
                                  shadowMaps,
                                  cubeMaps,
-                                 textureSampler
+                                 textureSampler, nullptr, nullptr, 0, 0.0f, 0.001f, false
                                  );
+            
+    // DITHERING
+    float dist = distance(in.instanceWorldPosition, cameraPosition.xyz);
+    auto fadeNearDistance = 3.0f;
+    auto fadeFarDistance = 10.0f;
+    float a = smoothstep(fadeNearDistance, fadeFarDistance, dist);
+
+    float threshold = interleavedGradientNoise(in.position.xy);
+    if (a < threshold) {
+        discard_fragment();
+    }
+    
+    FragmentOut out;
+    out.color = float4(c.rgb, c.a * alpha);
+    out.motionVector = motionVector(in.currentClipPosition, in.previousClipPosition);
+    return out;
 }
 
 
