@@ -23,7 +23,7 @@ struct PhysicsSystem : public ISystem
         solver = new btSequentialImpulseConstraintSolver();
 
         dynamicWorld = new btDiscreteDynamicsWorld(dispatcher, overlappingPairCache, solver, collisionConfiguration);
-        dynamicWorld->setGravity(btVector3(0, -9.81f, 0));
+        dynamicWorld->setGravity(btVector3(0, 0, 0));
     }
 
     void update(World& world, const Context& ctx, float dt) override
@@ -58,7 +58,74 @@ struct PhysicsSystem : public ISystem
                 case ColliderType::BOX:
                     rb.btCollider = new btBoxShape(btVector3(rb.boxHalfExtents.x, rb.boxHalfExtents.y, rb.boxHalfExtents.z));
                     break;
-                default: ;
+                case ColliderType::MESH:
+                    {
+                        if (not world.hasComponent<MeshComponent>(entity))
+                        {
+                            throw runtime_error("MeshComponent not found for entity " + std::to_string(entity));
+                            std::cout << "trying to build collider before mesh loading" << std::endl;
+                        }
+                        std::cout << "building collider for entity " << world.getComponent<NameComponent>(entity).name << std::endl;
+                        auto mesh = world.getComponent<MeshComponent>(entity).mesh;
+                        auto btMesh = new btTriangleMesh();
+
+                        auto triangles = mesh->getTriangles();
+                        for (int i = 0; i < mesh->getFacesData().size(); i += 3)
+                        {
+                            auto t1 = triangles[i];
+                            auto t2 = triangles[i + 1];
+                            auto t3 = triangles[i + 2];
+                            btMesh->addTriangle(btVector3(t1.x, t1.y, t1.z), btVector3(t2.x, t2.y, t2.z), btVector3(t3.x, t3.y, t3.z));
+                        }
+                        rb.btCollider = new btConvexTriangleMeshShape(btMesh, true);
+                        //delete btMesh;
+                        break;
+                    }
+                case ColliderType::BVH:
+                    {
+                        if (not world.hasComponent<MeshComponent>(entity))
+                        {
+                            throw runtime_error("MeshComponent not found for entity " + std::to_string(entity));
+                            std::cout << "trying to build collider before mesh loading" << std::endl;
+                        }
+                        std::cout << "building collider for entity " << world.getComponent<NameComponent>(entity).name << std::endl;
+                        auto mesh = world.getComponent<MeshComponent>(entity).mesh;
+                        auto btMesh = new btTriangleMesh();
+
+                        auto triangles = mesh->getTriangles();
+                        for (int i = 0; i < mesh->getFacesData().size(); i += 3)
+                        {
+                            auto t1 = triangles[i];
+                            auto t2 = triangles[i + 1];
+                            auto t3 = triangles[i + 2];
+                            btMesh->addTriangle(btVector3(t1.x, t1.y, t1.z), btVector3(t2.x, t2.y, t2.z), btVector3(t3.x, t3.y, t3.z));
+                        }
+                        rb.btCollider = new btBvhTriangleMeshShape(btMesh, true);
+                        //delete btMesh;
+                        break;
+                    }
+                case ColliderType::HULL:
+                    {
+                        if (not world.hasComponent<MeshComponent>(entity))
+                        {
+                            throw runtime_error("MeshComponent not found for entity " + std::to_string(entity));
+                            std::cout << "trying to build collider before mesh loading" << std::endl;
+                        }
+                        std::cout << "building collider for entity " << world.getComponent<NameComponent>(entity).name << std::endl;
+                        auto mesh = world.getComponent<MeshComponent>(entity).mesh;
+
+                        auto vertices = mesh->getVertices();
+                        auto convexHullShape = new btConvexHullShape();
+
+                        for (const auto& v : vertices)
+                        {
+                            convexHullShape->addPoint(btVector3(v.x, v.y, v.z), false);
+                        }
+                        convexHullShape->optimizeConvexHull();
+                        convexHullShape->recalcLocalAabb();
+                        rb.btCollider = convexHullShape;
+                        break;
+                    }
                 }
                 rb.btCollider->setMargin(0.05f);
                 if (rb.mass > 0.0f) {
@@ -154,7 +221,7 @@ struct PhysicsSystem : public ISystem
 
         // update dynamic world
         if (dt > 0.0f) {
-            dynamicWorld->stepSimulation(dt, 10);
+            dynamicWorld->stepSimulation(dt, 1);
         }
 
         for (auto& entity : entities) {
