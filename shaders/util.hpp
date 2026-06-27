@@ -8,12 +8,14 @@
 #include <metal_stdlib>
 using namespace metal;
 
-inline float3 hash3d_point(float3 p) {
+// HASH WIWTHOUT SINE
+inline float3 hash33(float3 p) {
     p = fract(p * float3(0.1031, 0.1030, 0.0973));
     p += dot(p, p.yxz + 33.33);
     return fract((p.xxy + p.yxx) * p.zyx);
 }
 
+// returns a number between 0.0 and 1.0
 inline float hash1d(float3 p) {
     float3 p3  = fract(p * float3(.1031, .1030, .0973));
     p3 += dot(p3, p3.yzx + 33.33);
@@ -121,5 +123,61 @@ inline float ridgedFBM(float3 p, int octaves) {
     }
     return value;
 }
+
+inline float2 motionVector(float4 currentClip, float4 previousClip) {
+    // compute motions vector
+    float2 currentNDC = currentClip.xy / currentClip.w;
+    float2 prevNDC = previousClip.xy / previousClip.w;
+
+    // 2. Converti NDC in UV [0.0, 1.0] e inverti l'asse Y per Metal
+    float2 currentUV = currentNDC * 0.5 + 0.5;
+    currentUV.y = 1.0 - currentUV.y;
+
+    float2 prevUV = prevNDC * 0.5 + 0.5;
+    prevUV.y = 1.0 - prevUV.y;
+
+    // 3. Il vettore di movimento è la differenza UV
+    // Positivo significa che l'oggetto è andato verso destra/basso
+    auto mv = prevUV - currentUV;
+    return mv;
+}
+
+inline float interleavedGradientNoise(float2 pixelCoord) {
+    float3 magic = float3(0.06711056f, 0.00583715f, 52.9829189f);
+    return fract(magic.z * fract(dot(pixelCoord, magic.xy)));
+}
+
+// Rumore di Perlin 3D classico
+inline float perlinNoise3D(float3 p) {
+    float3 pi = floor(p);
+    float3 pf = fract(p);
+    
+    // Smoothstep interpolation (fade)
+    float3 w = pf * pf * (3.0 - 2.0 * pf);
+    
+    return mix(mix(mix(dot(hash33(pi + float3(0,0,0)), pf - float3(0,0,0)),
+                       dot(hash33(pi + float3(1,0,0)), pf - float3(1,0,0)), w.x),
+                   mix(dot(hash33(pi + float3(0,1,0)), pf - float3(0,1,0)),
+                       dot(hash33(pi + float3(1,1,0)), pf - float3(1,1,0)), w.x), w.y),
+               mix(mix(dot(hash33(pi + float3(0,0,1)), pf - float3(0,0,1)),
+                       dot(hash33(pi + float3(1,0,1)), pf - float3(1,0,1)), w.x),
+                   mix(dot(hash33(pi + float3(0,1,1)), pf - float3(0,1,1)),
+                       dot(hash33(pi + float3(1,1,1)), pf - float3(1,1,1)), w.x), w.y), w.z);
+}
+
+// FBM (Fractal Brownian Motion): sovrappone più ottave di rumore per creare dettagli fini
+inline float fbm_from_perlin(float3 p, int octaves) {
+    float value = 0.0;
+    float amplitude = 0.5;
+    float frequency = 1.0;
+    for (int i = 0; i < octaves; i++) {
+        value += amplitude * perlinNoise3D(p * frequency);
+        frequency *= 2.0;
+        amplitude *= 0.5;
+    }
+    return value * 0.5 + 0.5; // Rimappa l'output tra [0.0, 1.0]
+}
+
+
 
 #endif //EVOLVING_PLANETS_UTIL_HPP
