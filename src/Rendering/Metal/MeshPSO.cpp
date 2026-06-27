@@ -79,6 +79,11 @@ namespace Rendering::Metal
             break;
         }
 
+        // SET PIXEL FORMAT FOR MOTION VECTOR ATTACHMENT
+        if (config.hasMotionVectors)
+            meshPSODescriptor->colorAttachments()->object(1)->setPixelFormat(MTL::PixelFormat::PixelFormatRG16Float);
+
+
         // Depth attachment
         if (config.depthTest == Enabled)
         {
@@ -105,8 +110,6 @@ namespace Rendering::Metal
         meshPSODescriptor->setMaxTotalThreadsPerObjectThreadgroup(256);
         meshPSODescriptor->setMaxTotalThreadsPerMeshThreadgroup(64);
 
-        meshPSODescriptor->setRasterSampleCount(config.sampleCount);
-
         // Create pipeline state
         NS::Error* error = nullptr;
         _metalPSO = NS::TransferPtr(device->newRenderPipelineState(meshPSODescriptor.get(), MTL::PipelineOptionNone, nullptr, &error));
@@ -119,6 +122,72 @@ namespace Rendering::Metal
                 errorMsg += ": " + std::string(error->localizedDescription()->utf8String());
             }
             throw std::runtime_error(errorMsg);
+        }
+
+        // generate samplers
+        for (int i = 0; i < config.samplers.size(); i++)
+        {
+            auto samplerD = config.samplers[i];
+            auto samplerDescriptor = NS::TransferPtr(MTL::SamplerDescriptor::alloc()->init());
+            samplerDescriptor->setMinFilter(
+                samplerD.descriptor.minFilter == Core::Linear ? MTL::SamplerMinMagFilter::SamplerMinMagFilterLinear : MTL::SamplerMinMagFilter::SamplerMinMagFilterNearest
+            );
+            samplerDescriptor->setMagFilter(
+                samplerD.descriptor.magFilter == Core::Linear ? MTL::SamplerMinMagFilter::SamplerMinMagFilterLinear : MTL::SamplerMinMagFilter::SamplerMinMagFilterNearest
+            );
+
+            switch (samplerD.descriptor.addressModeU)
+            {
+            case Core::AddressMode::Repeat:
+                samplerDescriptor->setSAddressMode(MTL::SamplerAddressMode::SamplerAddressModeRepeat);
+                break;
+            case Core::AddressMode::ClampToEdge:
+                samplerDescriptor->setSAddressMode(MTL::SamplerAddressMode::SamplerAddressModeClampToEdge);
+                break;
+            case Core::AddressMode::ClampToZero:
+                samplerDescriptor->setSAddressMode(MTL::SamplerAddressMode::SamplerAddressModeClampToZero);
+                break;
+            case Core::AddressMode::MirrorRepeat:
+                samplerDescriptor->setSAddressMode(MTL::SamplerAddressMode::SamplerAddressModeMirrorRepeat);
+                break;
+            default: break;
+            }
+            switch (samplerD.descriptor.addressModeV)
+            {
+            case Core::AddressMode::Repeat:
+                samplerDescriptor->setTAddressMode(MTL::SamplerAddressMode::SamplerAddressModeRepeat);
+                break;
+            case Core::AddressMode::ClampToEdge:
+                samplerDescriptor->setTAddressMode(MTL::SamplerAddressMode::SamplerAddressModeClampToEdge);
+                break;
+            case Core::AddressMode::ClampToZero:
+                samplerDescriptor->setTAddressMode(MTL::SamplerAddressMode::SamplerAddressModeClampToZero);
+                break;
+            case Core::AddressMode::MirrorRepeat:
+                samplerDescriptor->setTAddressMode(MTL::SamplerAddressMode::SamplerAddressModeMirrorRepeat);
+                break;
+            default: break;
+            }
+            switch (samplerD.descriptor.addressModeW)
+            {
+            case Core::AddressMode::Repeat:
+                samplerDescriptor->setRAddressMode(MTL::SamplerAddressMode::SamplerAddressModeRepeat);
+                break;
+            case Core::AddressMode::ClampToEdge:
+                samplerDescriptor->setRAddressMode(MTL::SamplerAddressMode::SamplerAddressModeClampToEdge);
+                break;
+            case Core::AddressMode::ClampToZero:
+                samplerDescriptor->setRAddressMode(MTL::SamplerAddressMode::SamplerAddressModeClampToZero);
+                break;
+            case Core::AddressMode::MirrorRepeat:
+                samplerDescriptor->setRAddressMode(MTL::SamplerAddressMode::SamplerAddressModeMirrorRepeat);
+                break;
+            default: break;
+            }
+
+            samplerDescriptor->setNormalizedCoordinates(samplerD.descriptor.normalizedCoordinates);
+            auto sampler = NS::TransferPtr(device->newSamplerState(samplerDescriptor.get()));
+            samplers[samplerD.descriptor] = sampler;
         }
     }
 }
