@@ -80,12 +80,12 @@ namespace Rendering
         );
         if (_globalMaterials.contains(config.name)) return;
 
-        auto material = std::unordered_map<MaterialType, std::vector<std::byte>>();
+        auto material = std::unordered_map<MaterialType, MaterialInstance>();
 
         // create pso default materials
         for (const auto& info : config.globalMaterials)
         {
-            material.insert({info.type, getDefaultBytes(info.type)});
+            material.insert({info.type, MaterialInstance(getDefaultBytes(info.type))});
         }
         _globalMaterials.emplace(config.name, material);
     }
@@ -109,11 +109,11 @@ namespace Rendering
         {
             materialInstanceID = _nextInstanceMaterialID++;
         }
-        auto material = std::unordered_map<MaterialType, std::vector<std::byte>>();
+        auto material = std::unordered_map<MaterialType, MaterialInstance>();
         auto infos = _pipelineStateObjects.at(psoName)->config.instanceMaterials;
         for (auto& info : infos)
         {
-            material.insert({info.type, getDefaultBytes(info.type)});
+            material.insert({info.type, MaterialInstance(getDefaultBytes(info.type))});
         }
         _instanceMaterials.insert({materialInstanceID, material});
 
@@ -134,7 +134,7 @@ namespace Rendering
          */
         if (_instanceMaterials.contains(id)) {
             if (_instanceMaterials.at(id).contains(type)) {
-                _instanceMaterials.at(id).at(type) = bytes;
+                _instanceMaterials.at(id).at(type).update(bytes);
             }
         }
     }
@@ -155,7 +155,7 @@ namespace Rendering
         {
             if (_globalMaterials.at(name).contains(type))
             {
-                _globalMaterials.at(name).at(type) = bytes;
+                _globalMaterials.at(name).at(type).update(bytes);
             }
         }
     }
@@ -166,7 +166,7 @@ namespace Rendering
         {
             if (_globalMaterials.at(psoName).contains(type))
             {
-                _globalMaterials.at(psoName).at(type) = bytes;
+                _globalMaterials.at(psoName).at(type).update(bytes);
             }
         }
     }
@@ -176,7 +176,7 @@ namespace Rendering
         const std::vector<std::shared_ptr<Texture>>& textures,
         const std::string& psoName, const vector<pair<MaterialType,
         std::vector<std::byte>>>& materialOverrides,
-        bool castShadows,
+        uint32_t castShadows,
         bool wireframe,
         glm::ivec3 grid,
         glm::ivec3 threadgroup
@@ -209,7 +209,7 @@ namespace Rendering
         });
     }
 
-    // set this texture as global textre of type == type for every pso
+    // set this texture as global texture of type == type for every pso
     void IRenderer::setGlobalTexture(TextureType type, uint64_t id)
     {
         for (auto& pso : _pipelineStateObjects)
@@ -234,8 +234,10 @@ namespace Rendering
             if (_globalTextures.at(name).contains(type))
             {
                 auto oldID = _globalTextures.at(name).at(type);
-                destroyTexture(oldID);
-                _globalTextures.at(name).at(type) = id;
+                if (oldID != id) {
+                    destroyGlobalTexture(oldID);
+                    _globalTextures.at(name).at(type) = id;
+                }
             }
             else
             {
@@ -247,4 +249,33 @@ namespace Rendering
             _globalTextures.insert({name, {{type, id}}});
         }
     }
+
+    // DRAW DEBUG FUNCTIONS
+    void IRenderer::debugDrawAABB(const glm::vec3& min, const glm::vec3& max, const glm::vec4& color)
+    {
+        auto mesh = Geometry::Mesh::aabb(min, max, color);
+        iDraw(*mesh, {}, "curve", {}, false, true);
+    }
+
+    void IRenderer::debugDrawLine(const glm::vec3& start, const glm::vec3& end, const glm::vec4& color)
+    {
+        auto polygon = std::vector<glm::vec3>{};
+        polygon.push_back(start);
+        polygon.push_back(end);
+        auto mesh = Geometry::Mesh::fromPolygon(polygon, color);
+        iDraw(*mesh, {}, "curve", {}, false, true);
+    }
+
+    void IRenderer::debugDrawSphere(const glm::vec3& center, float radius, const glm::vec4& color)
+    {
+        auto mesh = Geometry::Mesh::icosphere(2, color, radius, center);
+        iDraw(*mesh, {}, "Unlit", {{UNLIT_COLOR, getBytes(color)}}, false, true);
+    }
+
+    void IRenderer::debugDrawMesh(const Geometry::Mesh& mesh, const glm::mat4& modelMatrix, const glm::vec4& color)
+    {
+        iDraw(mesh, {}, "Unlit", {{MODEL_MATRIX, getBytes(modelMatrix)}, {UNLIT_COLOR, getBytes(color)}}, false, true);
+    }
 }
+
+

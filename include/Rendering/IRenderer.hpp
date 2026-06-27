@@ -22,6 +22,27 @@
 namespace Rendering
 {
 
+    struct MaterialInstance
+    {
+        MaterialInstance(const std::vector<std::byte>& data)
+        {
+            bytes = data;
+            writeCounter = 0;
+            cachedOffsets[0] = -1;
+            cachedOffsets[1] = -1;
+            cachedOffsets[2] = -1;
+        }
+        std::vector<std::byte> bytes;
+        size_t cachedOffsets[3] = {0, 0, 0};
+        int writeCounter = 0;
+
+        void update(const std::vector<std::byte>& newBytes)
+        {
+            bytes = newBytes;
+            writeCounter = 0;
+        }
+    };
+
     class IRenderer
     {
     public:
@@ -89,7 +110,7 @@ namespace Rendering
                     if (materialType == type)
                     {
                         T t;
-                        memcpy(&t, materialBytes.data(), sizeof(T));
+                        memcpy(&t, materialBytes.bytes.data(), sizeof(T));
                         return t;
                     }
                 }
@@ -102,7 +123,7 @@ namespace Rendering
             const std::vector<std::shared_ptr<Texture>>& textures,
             const std::string& psoName,
             const vector<pair<MaterialType, std::vector<std::byte>>>& materialOverrides,
-            bool castShadows = false,
+            uint32_t castShadows = 0,
             bool wireframe = false,
             glm::ivec3 grid = {0, 0, 0},
             glm::ivec3 threadgroup = {0, 0, 0}
@@ -118,6 +139,33 @@ namespace Rendering
             glm::ivec3 grid, glm::ivec3 threadgroup
             ) = 0;
 
+        void setJitter(glm::vec2 jitter)
+        {
+            _jitter = jitter;
+        }
+        [[nodiscard]] float getTAAScaling() const
+        {
+            return _TAAScaling;
+        }
+        void setTAAScaling(float value)
+        {
+            _TAAScaling = value;
+        }
+
+        bool useTAAScaling = true;
+
+        // DEBUG DRAW FUNCTIONS
+        void debugDrawAABB(const glm::vec3& min, const glm::vec3& max, const glm::vec4& color);
+        void debugDrawLine(const glm::vec3& start, const glm::vec3& end, const glm::vec4& color);
+        void debugDrawSphere(const glm::vec3& center, float radius, const glm::vec4& color);
+        void debugDrawMesh(const Geometry::Mesh& mesh, const glm::mat4& modelMatrix, const glm::vec4& color);
+
+        virtual uint64_t addGlobalTexture(const std::shared_ptr<Texture>& texture) = 0;
+        virtual void destroyGlobalTexture(uint64_t id) = 0;
+
+        void setGlobalTexture(TextureType type, uint64_t);
+        void setGlobalTexture(const std::string& name, TextureType type, uint64_t);
+
     protected:
 
         // FACTORIES
@@ -129,17 +177,13 @@ namespace Rendering
 
         std::unordered_map<std::string, std::shared_ptr<IPSO>> _pipelineStateObjects;
 
-        std::unordered_map<std::string, std::unordered_map<MaterialType, std::vector<std::byte>>> _globalMaterials;
-        std::unordered_map<uint64_t, std::unordered_map<MaterialType, std::vector<std::byte>>> _instanceMaterials;
+        std::unordered_map<std::string, std::unordered_map<MaterialType, MaterialInstance>> _globalMaterials;
+        std::unordered_map<uint64_t, std::unordered_map<MaterialType, MaterialInstance>> _instanceMaterials;
 
         std::unordered_map<std::string, std::unordered_map<TextureType, uint64_t>> _globalTextures;
 
         std::vector<uint64_t> _immediateRenderables;
         std::vector<uint64_t> _immediateInstanceMaterials;
-
-        void setGlobalTexture(TextureType type, uint64_t);
-        void setGlobalTexture(const std::string& name, TextureType type, uint64_t);
-        virtual void destroyTexture(uint64_t) = 0;
 
         RenderQueue _immediateRenderQueue;
         // IDs
@@ -151,6 +195,8 @@ namespace Rendering
         std::function<void()> _debugUICallback;
 
         glm::vec2 _drawableSize;
+        glm::vec2 _jitter;
+        float _TAAScaling = 0.75f;
     };
 }
 
