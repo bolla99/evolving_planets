@@ -23,14 +23,18 @@ namespace Rendering
                 Solid,
                 Back,
                 Enabled,
+                Default,
                 ColorPixelFormat::BGRAUnorm,
                 DepthPixelFormat::Depth32Float,
                 G_getVertexDescriptors().at("PC"),
                 {
-                    {MODEL_MATRIX, Vertex, 28},
+                    {PREVIOUS_MODEL_MATRIX, Vertex, 25},
+                    {MODEL_MATRIX, Vertex, 27},
+                    {UNLIT_COLOR, Vertex, 26}
                 }, {
-                    {VIEW_MATRIX, Vertex, 29},
-                    {PROJECTION_MATRIX, Vertex, 30}
+                        {VIEW_PROJECTION_MATRIX, Vertex, 28},
+                        {PREVIOUS_VIEW_PROJECTION_MATRIX, Vertex, 29},
+                        {JITTERED_VIEW_PROJECTION_MATRIX, Vertex, 30},
                 }, {}, {}, {}
             }
         },
@@ -47,6 +51,7 @@ namespace Rendering
                 Solid,
                 Back,
                 Enabled,
+                Default,
                 ColorPixelFormat::BGRAUnorm,
                 DepthPixelFormat::Depth32Float,
                 G_getVertexDescriptors().at("PCNUV"),
@@ -78,6 +83,7 @@ namespace Rendering
                 Solid,
                 Back,
                 Enabled,
+                Default,
                 ColorPixelFormat::BGRAUnorm,
                 DepthPixelFormat::Depth32Float,
                 G_getVertexDescriptors().at("PCNUV"),
@@ -109,6 +115,7 @@ namespace Rendering
                 Solid,
                 Back,
                 Enabled,
+                Default,
                 ColorPixelFormat::BGRAUnorm,
                 DepthPixelFormat::Depth32Float,
                 G_getVertexDescriptors().at("PCNUV"),
@@ -132,6 +139,7 @@ namespace Rendering
                         {
                                 {Core::MirrorRepeat,
                                 Core::MirrorRepeat,
+                                    Core::None,
                                 Core::Linear,
                                 Core::Linear,
                                 true,
@@ -153,20 +161,24 @@ namespace Rendering
                 Solid,
                 Back,
                 Enabled,
+                Default,
                 ColorPixelFormat::BGRAUnorm,
                 DepthPixelFormat::Depth32Float,
                 G_getVertexDescriptors().at("PCNUV"),
                 {
+                            {PREVIOUS_MODEL_MATRIX, Vertex, 25},
+                            {WARD_ALPHA, Fragment, 22},
                             {ROUGHNESS, Fragment, 25},
                             {METALLIC, Fragment, 26},
-                            {NORMAL_MATRIX, Vertex, 27},
-                            {MODEL_MATRIX, Vertex, 28},
+                            {NORMAL_MATRIX, Vertex, 26},
+                            {MODEL_MATRIX, Vertex, 27},
                             },
                         {
                             {SHADOW_DATA, Fragment, 23},
                             {POINT_SHADOW_DATA, Fragment, 24},
-                            {VIEW_MATRIX, Vertex, 29},
-                            {PROJECTION_MATRIX, Vertex, 30},
+                            {VIEW_PROJECTION_MATRIX, Vertex, 28},
+                            {PREVIOUS_VIEW_PROJECTION_MATRIX, Vertex, 29},
+                            {JITTERED_VIEW_PROJECTION_MATRIX, Vertex, 30},
                             {CAMERA_POSITION, Fragment, 27},
                             {LIGHTS, Fragment, 28}
                         },
@@ -178,6 +190,7 @@ namespace Rendering
                             {
                                     {Core::MirrorRepeat,
                                     Core::MirrorRepeat,
+                                        Core::None,
                                     Core::Nearest,
                                     Core::Nearest,
                                     true,
@@ -199,6 +212,7 @@ namespace Rendering
                 Solid,
                 Back,
                 Enabled,
+                Default,
                 ColorPixelFormat::BGRAUnorm,
                 DepthPixelFormat::Depth32Float,
                 G_getVertexDescriptors().at("PCNUV"),
@@ -229,6 +243,7 @@ namespace Rendering
                 Solid,
                 Back,
                 Enabled,
+                Default,
                 ColorPixelFormat::BGRAUnorm,
                 DepthPixelFormat::Depth32Float,
                 G_getVertexDescriptors().at("PC"),
@@ -252,6 +267,7 @@ namespace Rendering
                 Solid,
                 Back,
                 Enabled,
+                Default,
                 ColorPixelFormat::BGRAUnorm,
                 DepthPixelFormat::Depth32Float,
                 G_getVertexDescriptors().at("PCNUV"),
@@ -270,8 +286,9 @@ namespace Rendering
                 {{Core::Diffuse, Fragment, 0}},
                 {},
                 {
-                    {Core::Repeat,
+                        {Core::Repeat,
                         Core::Repeat,
+                        Core::None,
                         Core::Nearest,
                         Core::Nearest,
                         true,
@@ -291,6 +308,7 @@ namespace Rendering
                 Solid,
                 Back,
                 Enabled,
+                Default,
                 ColorPixelFormat::BGRAUnorm,
                 DepthPixelFormat::Depth32Float,
                 G_getVertexDescriptors().at("PUV"),
@@ -305,6 +323,7 @@ namespace Rendering
                 {
                         {Core::Repeat,
                             Core::Repeat,
+                            Core::None,
                             Core::Nearest,
                             Core::Nearest,
                             true,
@@ -325,6 +344,7 @@ namespace Rendering
                 Solid,
                 Back,
                 Disabled,
+                Default,
                 ColorPixelFormat::BGRAUnorm,
                 DepthPixelFormat::DepthInvalid,
                 G_getVertexDescriptors().at("PUV"),
@@ -338,6 +358,7 @@ namespace Rendering
                 }, {}, {
                             {Core::ClampToZero,
                                 Core::ClampToZero,
+                                Core::None,
                                 Core::Linear,
                                 Core::Linear,
                                 true,
@@ -357,16 +378,18 @@ namespace Rendering
                 Solid,
                 Back,
                 Enabled,
+                Default,
                 ColorPixelFormat::BGRAUnorm,
                 DepthPixelFormat::Depth32Float,
                 G_getVertexDescriptors().at("PC"),
 
                 {
-                    {MODEL_MATRIX, Vertex, 28}
+                    {MODEL_MATRIX, Vertex, 26}
                 },
                 {
-                        {VIEW_MATRIX, Vertex, 29},
-                        {PROJECTION_MATRIX, Vertex, 30}
+                        {VIEW_PROJECTION_MATRIX, Vertex, 27},
+                        {PREVIOUS_VIEW_PROJECTION_MATRIX, Vertex, 28},
+                        {JITTERED_VIEW_PROJECTION_MATRIX, Vertex, 29},
                 }, {}, {}, {}
             }
         },
@@ -383,6 +406,7 @@ namespace Rendering
                     Solid,
                     Back,
                     Enabled,
+                    Default,
                     ColorPixelFormat::ColorInvalid,
                     DepthPixelFormat::Depth32Float,
                     G_getVertexDescriptors().at("P"),
@@ -393,7 +417,7 @@ namespace Rendering
                     {
                             //{DIRECTIONAL_LIGHT_INDEX, Vertex, 29},
                             {SHADOW_DATA, Vertex, 30}
-                    }, {}, {}, {}, -1, 1
+                    }, {}, {}, {}, -1, false
                 }
             },
         std::pair<std::string, const PSOConfig>{
@@ -409,6 +433,7 @@ namespace Rendering
                 Solid,
                 Front,
                 Enabled,
+                Default,
                 ColorPixelFormat::ColorInvalid,
                 DepthPixelFormat::Depth32Float,
                 G_getVertexDescriptors().at("P"),
@@ -420,7 +445,7 @@ namespace Rendering
                                 {POINT_SHADOW_DATA, Vertex, 30},
                                 {POINT_SHADOW_DATA, Fragment, 30},
 
-                }, {}, {}, {}, -1, 1
+                }, {}, {}, {}, -1, false
             }
         },
         std::pair<std::string, const PSOConfig>{
@@ -436,6 +461,7 @@ namespace Rendering
                 Solid,
                 Back,
                 Enabled,
+                Default,
                 ColorPixelFormat::BGRAUnorm,
                 DepthPixelFormat::Depth32Float,
                 G_getVertexDescriptors().at("P"),
@@ -445,12 +471,37 @@ namespace Rendering
                 },
                 {
                                         {VIEWPORT_SIZE, Vertex, 3},
+                                        {JITTER, Vertex, 4},
+                                        {JITTER, Fragment, 25},
+                                        {INVERSE_VIEW_PROJECTION_MATRIX, Vertex, 5},
+                                        {VIEW_PROJECTION_MATRIX, Vertex, 6},
+                                        {PREVIOUS_VIEW_PROJECTION_MATRIX, Vertex, 7},
+                                        {CAMERA_POSITION, Vertex, 8},
+                                        {TAAScaling, Vertex, 9},
+                                        {PROJECTION_MATRIX, Vertex, 10},
+                                        {INVERSE_PROJECTION_MATRIX, Vertex, 11},
                                         {INVERSE_VIEW_MATRIX, Fragment, 26},
-                                            {INVERSE_PROJECTION_MATRIX, Fragment, 27},
+                                        {INVERSE_PROJECTION_MATRIX, Fragment, 27},
                                         {CAMERA_POSITION, Fragment, 28},
-                                        {VIEWPORT_SIZE, Fragment, 29}
-
-                }, {}, {}, {}
+                                        {VIEWPORT_SIZE, Fragment, 29},
+                                        {SUN_DIRECTION, Fragment, 30},
+                                        {POTENTIAL_OCTREE, Fragment, 12},
+                                        {POTENTIAL_OCTREE_INFO, Fragment, 13},
+                                        {BVH_NODES, Fragment, 14},
+                                        {BVH_PRIMITIVES, Fragment, 15},
+                                        {BVH_INFO, Fragment, 16},
+                                        {POTENTIAL_SAMPLING_INFO, Fragment, 17},
+                                        {SUN_COLOR, Fragment, 18},
+                                        {SHADOW_DATA, Fragment, 19},
+                                        {LIGHTS, Fragment, 20},
+                                    {ATMOSPHERE_SETTINGS, Fragment, 21}
+                }, {}, {
+                    {Core::AtmosphereDensity3D, Fragment, 0},
+                    {Core::LightTransmittance3D, Fragment, 1},
+                    {Core::ShadowMap, Fragment, 2},
+                }, {
+                    {Core::ClampToEdge, Core::ClampToEdge, Core::ClampToEdge, Core::Linear, Core::Linear, true, Fragment, 0},
+                }
             }
         },
         std::pair<std::string, const PSOConfig>{
@@ -466,6 +517,7 @@ namespace Rendering
                 Solid,
                 Back,
                 Enabled,
+                Default,
                 ColorPixelFormat::BGRAUnorm,
                 DepthPixelFormat::Depth32Float,
                 G_getVertexDescriptors().at("PCN"),
@@ -493,6 +545,7 @@ namespace Rendering
                 Solid,
                 Back,
                 Enabled,
+                Default,
                 ColorPixelFormat::BGRAUnorm,
                 DepthPixelFormat::Depth32Float,
                 G_getVertexDescriptors().at("P"), // Dummy
@@ -519,6 +572,7 @@ namespace Rendering
                 Solid,
                 None,
                 Enabled,
+                Default,
                 ColorPixelFormat::BGRAUnorm,
                 DepthPixelFormat::Depth32Float,
                 G_getVertexDescriptors().at("P"), // Dummy
@@ -577,12 +631,12 @@ namespace Rendering
                     {Core::CubeShadowMap, Fragment, 1}
                 },
                 {
-                    {Core::Repeat, Core::ClampToEdge, Core::Linear, Core::Linear, true, Fragment, 0},
-                    {Core::Repeat, Core::ClampToEdge, Core::Linear, Core::Linear, true, Object, 0},
-                    {Core::Repeat, Core::ClampToEdge, Core::Linear, Core::Linear, true, Mesh, 0},
-                    {Core::ClampToEdge, Core::ClampToEdge, Core::Linear, Core::Linear, true, Fragment, 1},
-                    {Core::ClampToEdge, Core::ClampToEdge, Core::Linear, Core::Linear, true, Object, 1},
-                    {Core::ClampToEdge, Core::ClampToEdge, Core::Linear, Core::Linear, true, Mesh, 1}
+                    {Core::Repeat, Core::ClampToEdge, Core::None, Core::Linear, Core::Linear, true, Fragment, 0},
+                    {Core::Repeat, Core::ClampToEdge, Core::None, Core::Linear, Core::Linear, true, Object, 0},
+                    {Core::Repeat, Core::ClampToEdge, Core::None, Core::Linear, Core::Linear, true, Mesh, 0},
+                    {Core::ClampToEdge, Core::ClampToEdge, Core::None, Core::Linear, Core::Linear, true, Fragment, 1},
+                    {Core::ClampToEdge, Core::ClampToEdge, Core::None, Core::Linear, Core::Linear, true, Object, 1},
+                    {Core::ClampToEdge, Core::ClampToEdge, Core::None, Core::Linear, Core::Linear, true, Mesh, 1}
                 }
             }
         },
@@ -599,6 +653,7 @@ namespace Rendering
                 Solid,
                 None,
                 Enabled,
+                Default,
                 ColorPixelFormat::BGRAUnorm,
                 DepthPixelFormat::Depth32Float,
                 G_getVertexDescriptors().at("P"), // Dummy
@@ -636,8 +691,8 @@ namespace Rendering
                     {Core::CubeShadowMap, Fragment, 1}
                 },
                 {
-                    {Core::Repeat, Core::Repeat, Core::Linear, Core::Linear, true, Fragment, 0},
-                    {Core::Repeat, Core::Repeat, Core::Linear, Core::Linear, true, Fragment, 1}
+                    {Core::Repeat, Core::Repeat, Core::None, Core::Linear, Core::Linear, true, Fragment, 0},
+                    {Core::Repeat, Core::Repeat, Core::None, Core::Linear, Core::Linear, true, Fragment, 1}
                 }
             }
         },
@@ -649,7 +704,13 @@ namespace Rendering
                 PipelineType::Compute,
                 "generateRockyTexture",
                 "", "",
-                Triangle, Solid, None, Enabled, ColorPixelFormat::BGRAUnorm, DepthPixelFormat::Depth32Float,
+                Triangle,
+                Solid,
+                None,
+                Enabled,
+                Default,
+                ColorPixelFormat::BGRAUnorm,
+                DepthPixelFormat::Depth32Float,
                 G_getVertexDescriptors().at("P"),
                 {
                     {PLANET_INFO, Vertex, 0},
@@ -666,7 +727,7 @@ namespace Rendering
                 },
                 {},
                 {
-                    {Core::Repeat, Core::ClampToEdge, Core::Linear, Core::Linear, true, Fragment, 0}
+                    {Core::Repeat, Core::ClampToEdge, Core::None, Core::Linear, Core::Linear, true, Fragment, 0}
                 }
             }
         },
@@ -683,6 +744,7 @@ namespace Rendering
                 Solid,
                 Back,
                 Enabled,
+                Default,
                 ColorPixelFormat::BGRAUnorm,
                 DepthPixelFormat::Depth32Float,
                 G_getVertexDescriptors().at("P"), // Dummy
@@ -698,16 +760,18 @@ namespace Rendering
                 {
                     {CAMERA_POSITION, Object, 25},
                     {VIEW_MATRIX, Object, 26},
-                    {VIEW_MATRIX, Mesh, 26},
                     {PROJECTION_MATRIX, Object, 27},
-                    {PROJECTION_MATRIX, Mesh, 27},
                     {VIEW_PROJECTION_MATRIX, Mesh, 28},
+                    {PREVIOUS_VIEW_PROJECTION_MATRIX, Mesh, 29},
+                    {JITTERED_VIEW_PROJECTION_MATRIX, Mesh, 30},
                     {SHADOW_DATA, Fragment, 23},
                     {POINT_SHADOW_DATA, Fragment, 24},
                     {ROUGHNESS, Fragment, 25},
                     {METALLIC, Fragment, 26},
                     {CAMERA_POSITION, Fragment, 27},
-                    {LIGHTS, Fragment, 28}
+                    {LIGHTS, Fragment, 28},
+                    {POTENTIAL_SAMPLING_INFO, Fragment, 16},
+                {ATMOSPHERE_SETTINGS, Fragment, 21}
                 },
                 {
                         {Core::BSplineTexture, Object, 2},
@@ -719,14 +783,246 @@ namespace Rendering
                 },
                 {
                     {Core::ShadowMap, Fragment, 0},
-                    {Core::CubeShadowMap, Fragment, 1}
+                    {Core::CubeShadowMap, Fragment, 1},
+                    {Core::AtmosphereDensity3D, Fragment, 4},
+                    {Core::LightTransmittance3D, Fragment, 5}
+
                 },
                 {
-                    {Core::Repeat, Core::ClampToEdge, Core::Linear, Core::Linear, true, Fragment, 0},
-                    {Core::Repeat, Core::ClampToEdge, Core::Linear, Core::Linear, true, Object, 0},
-                    {Core::Repeat, Core::ClampToEdge, Core::Linear, Core::Linear, true, Mesh, 0}
+                    {Core::Repeat, Core::ClampToEdge, Core::None, Core::Linear, Core::Linear, true, Fragment, 0},
+                    {Core::ClampToEdge, Core::ClampToEdge, Core::ClampToEdge, Core::Linear, Core::Linear, true, Fragment, 1},
+                    {Core::Repeat, Core::ClampToEdge, Core::None, Core::Linear, Core::Linear, true, Object, 0},
+                    {Core::Repeat, Core::ClampToEdge, Core::None, Core::Linear, Core::Linear, true, Mesh, 0}
                 }
             }
-        }
+        },
+        std::pair<std::string, const PSOConfig>{
+            std::string("Billboard"),
+            PSOConfig
+            {
+                "Billboard",
+                PipelineType::Vertex,
+                "billboardVertexFunction",
+                "billboardFragmentFunction",
+                "",
+                Triangle,
+                Solid,
+                None,
+                Enabled,
+                Additive,
+                ColorPixelFormat::BGRAUnorm,
+                DepthPixelFormat::Depth32Float,
+                G_getVertexDescriptors().at("PUV"),
+                {
+                    {BILLBOARD_DATA, Vertex, 13},
+                    {BILLBOARD_DATA, Fragment, 0},
+                    {MODEL_MATRIX, Vertex, 30},
+                    {PARTICLE_SOFTNESS, Fragment, 2}
+                },
+                {
+                    {VIEW_MATRIX, Vertex, 11},
+                    {PROJECTION_MATRIX, Vertex, 12},
+                    {CAMERA_POSITION, Vertex, 10},
+                    {CAMERA_PLANES, Fragment, 1}
+                },
+                {
+                    {Core::Billboard, Fragment, 0}
+                },
+                {
+                    {Core::OpaqueDepth, Fragment, 1}
+                },
+                {
+                    {Core::Repeat, Core::ClampToEdge, Core::None, Core::Linear, Core::Linear, true, Fragment, 0}
+                }
+            }
+        },
+        std::pair<std::string, const PSOConfig>{
+            std::string("RayleighShader"),
+            PSOConfig
+            {
+                "RayleighShader",
+                PipelineType::Vertex,
+                "rayleighVertex",
+                "rayleighFragment",
+                "",
+                Triangle,
+                Solid,
+                Front,
+                Enabled,
+                Additive,
+                ColorPixelFormat::BGRAUnorm,
+                DepthPixelFormat::Depth32Float,
+                G_getVertexDescriptors().at("PN"),
+                {
+                        {MODEL_MATRIX, Vertex, 10},
+                },
+                {
+                        {VIEW_PROJECTION_MATRIX, Vertex, 11},
+                        {CAMERA_POSITION, Fragment, 10},
+                    {SUN_DIRECTION, Fragment, 11},
+                    {POTENTIAL_OCTREE, Fragment, 12},
+                    {POTENTIAL_OCTREE_INFO, Fragment, 13}
+                },
+                {},
+                {},
+                {}
+            }
+        },
+        std::pair<std::string, const PSOConfig>{
+            std::string("Flame"),
+            PSOConfig
+            {
+                "Flame",
+                PipelineType::Vertex,
+                "vertexFlame",
+                "fragmentFlame",
+                "",
+                Triangle,
+                Solid,
+                None,
+                Enabled,
+                Additive,
+                ColorPixelFormat::BGRAUnorm,
+                DepthPixelFormat::Depth32Float,
+                G_getVertexDescriptors().at("PCNUV"),
+                {
+                                {PREVIOUS_MODEL_MATRIX, Vertex, 25},
+                                {WARD_ALPHA, Fragment, 22},
+                                {ROUGHNESS, Fragment, 25},
+                                {METALLIC, Fragment, 26},
+                                {NORMAL_MATRIX, Vertex, 26},
+                                {MODEL_MATRIX, Vertex, 27},
+                                },
+                            {
+                                {SHADOW_DATA, Fragment, 23},
+                                {POINT_SHADOW_DATA, Fragment, 24},
+                                {VIEW_PROJECTION_MATRIX, Vertex, 28},
+                                {PREVIOUS_VIEW_PROJECTION_MATRIX, Vertex, 29},
+                                {JITTERED_VIEW_PROJECTION_MATRIX, Vertex, 30},
+                                {CAMERA_POSITION, Fragment, 27},
+                                {LIGHTS, Fragment, 28},
+                                {TIME, Fragment, 29},
+                                {THURST, Fragment, 30}
+                            },
+                                {
+                                }, {
+                                    {Core::ShadowMap, Fragment, 0},
+                                    {Core::CubeShadowMap, Fragment, 1}
+                                },
+                                {
+                                        {Core::MirrorRepeat,
+                                        Core::MirrorRepeat,
+                                            Core::None,
+                                        Core::Nearest,
+                                        Core::Nearest,
+                                        true,
+                                        Fragment, 0
+                                        }
+                                }
+            }
+        },
+        std::pair<std::string, const PSOConfig>{
+            std::string("RUSTY_METAL"),
+            PSOConfig
+            {
+                "RUSTY_METAL",
+                PipelineType::Vertex,
+                "rustyVertex",
+                "rustyFragment",
+                "",
+                Triangle,
+                Solid,
+                Back,
+                Enabled,
+                Default,
+                ColorPixelFormat::BGRAUnorm,
+                DepthPixelFormat::Depth32Float,
+                G_getVertexDescriptors().at("PCNUV"),
+                {
+                                {PREVIOUS_MODEL_MATRIX, Vertex, 25},
+                                {WARD_ALPHA, Fragment, 22},
+                                {ROUGHNESS, Fragment, 25},
+                                {METALLIC, Fragment, 26},
+                                {NORMAL_MATRIX, Vertex, 26},
+                                {MODEL_MATRIX, Vertex, 27},
+                                },
+                            {
+                                {SHADOW_DATA, Fragment, 23},
+                                {POINT_SHADOW_DATA, Fragment, 24},
+                                {VIEW_PROJECTION_MATRIX, Vertex, 28},
+                                {PREVIOUS_VIEW_PROJECTION_MATRIX, Vertex, 29},
+                                {JITTERED_VIEW_PROJECTION_MATRIX, Vertex, 30},
+                                {CAMERA_POSITION, Fragment, 27},
+                                {LIGHTS, Fragment, 28}
+                            },
+                                {
+                                }, {
+                                    {Core::ShadowMap, Fragment, 0},
+                                    {Core::CubeShadowMap, Fragment, 1}
+                                },
+                                {
+                                        {Core::MirrorRepeat,
+                                        Core::MirrorRepeat,
+                                            Core::None,
+                                        Core::Nearest,
+                                        Core::Nearest,
+                                        true,
+                                        Fragment, 0
+                                        }
+                                }
+            }
+        },
+        std::pair<std::string, const PSOConfig>{
+            std::string("HotMetal"),
+            PSOConfig
+            {
+                "HotMetal",
+                PipelineType::Vertex,
+                "hotMetalVertex",
+                "hotMetalFragment",
+                "",
+                Triangle,
+                Solid,
+                Back,
+                Enabled,
+                Default,
+                ColorPixelFormat::BGRAUnorm,
+                DepthPixelFormat::Depth32Float,
+                G_getVertexDescriptors().at("PUV"),
+                {
+                        {PREVIOUS_MODEL_MATRIX, Vertex, 25},
+                        {MODEL_MATRIX, Vertex, 27},
+                }, {
+                    {VIEW_PROJECTION_MATRIX, Vertex, 28},
+                        {PREVIOUS_VIEW_PROJECTION_MATRIX, Vertex, 29},
+                        {JITTERED_VIEW_PROJECTION_MATRIX, Vertex, 30},
+                        {HEAT, Fragment, 10},
+                        {TIME, Fragment, 11}
+                }, {}, {}, {}
+            }
+        },
+        std::pair<std::string, const PSOConfig>{
+            std::string("Sharpening"),
+            PSOConfig
+            {
+                "Sharpening",
+                PipelineType::Compute,
+                "sharpening_pass",
+                "", "",
+                Triangle,
+                Solid,
+                None,
+                Enabled,
+                Default,
+                ColorPixelFormat::BGRAUnorm,
+                DepthPixelFormat::Depth32Float,
+                G_getVertexDescriptors().at("P"),
+                {},
+                {},
+                {},
+                {},
+                {}
+            }
+        },
     };
 }
