@@ -114,6 +114,7 @@ if(OpenMP_CXX_FOUND)
 
 add_subdirectory(gravity)
 target_embed_metal_shader_libraries(main GravityShaders)
+
 add_custom_command(TARGET main POST_BUILD
         #DEPENDS GravityShaders
         COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:GravityShaders>" "$<TARGET_BUNDLE_CONTENT_DIR:main>/Resources/$<TARGET_FILE_NAME:GravityShaders>"
@@ -158,6 +159,7 @@ target_link_libraries(main PRIVATE
         "-framework QuartzCore"
         "-framework MetalKit"
         "-framework AppKit"
+        "-framework MetalFX"
         SDL2::SDL2
         SDL2_ttf::SDL2_ttf
         assimp::assimp
