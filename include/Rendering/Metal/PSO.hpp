@@ -5,6 +5,7 @@
 #ifndef METALPSO_HPP
 #define METALPSO_HPP
 
+#include <map>
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
 
@@ -28,6 +29,9 @@ namespace Rendering::Metal
         // observer functions
         [[nodiscard]] MTL::Function* getVertexFunction() const { return _vertexF.get(); }
         [[nodiscard]] MTL::Function* getFragmentFunction() const { return _fragmentF.get(); }
+
+        std::map<Core::SamplerDescriptor, NS::SharedPtr<MTL::SamplerState>> samplers;
+
 
     private:
         NS::SharedPtr<MTL::RenderPipelineState> _metalPSO;

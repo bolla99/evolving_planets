@@ -5,11 +5,13 @@
 #ifndef MESHPSO_HPP
 #define MESHPSO_HPP
 
+#include <map>
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
 
 #include <Rendering/IPSO.hpp>
 #include <Rendering/VertexDescriptor.hpp>
+#include <Texture.hpp>
 
 namespace Rendering::Metal
 {
@@ -29,6 +31,8 @@ namespace Rendering::Metal
         [[nodiscard]] MTL::Function* getObjectFunction() const { return _objectF.get(); }
         [[nodiscard]] MTL::Function* getMeshFunction() const { return _meshF.get(); }
         [[nodiscard]] MTL::Function* getFragmentFunction() const { return _fragmentF.get(); }
+
+        std::map<Core::SamplerDescriptor, NS::SharedPtr<MTL::SamplerState>> samplers;
 
     private:
         NS::SharedPtr<MTL::RenderPipelineState> _metalPSO;
