@@ -9,10 +9,12 @@
 #include <ostream>
 #include <Metal/Metal.hpp>
 
+
+// a ring buffer
 class RingBuffer
 {
 public:
-    RingBuffer(MTL::Device* device, std::size_t maxSize = 10000000, size_t alignment = 256)
+    RingBuffer(MTL::Device* device, std::size_t maxSize = 100000000, size_t alignment = 256)
     {
         auto alignedSize = ((maxSize) / alignment) * alignment;
         framesInFlight = 3;
@@ -24,6 +26,34 @@ public:
         currentFrame = 0;
         head = 0;
         this->alignment = alignment;
+    }
+
+    size_t advance(size_t size)
+    {
+        // copy data
+        if (head % frameBlockSizeBytes + size > frameBlockSizeBytes)
+        {
+            std::cerr << "RingBuffer overflow" << std::endl;
+            throw std::runtime_error("RingBuffer overflow");
+        }
+        if (head + size >= capacity)
+        {
+            std::cerr << "RingBuffer overflow" << std::endl;
+            throw std::runtime_error("RingBuffer overflow");
+        }
+
+        size_t offset = head;
+        // update head
+        if (size < alignment)
+        {
+            head += alignment;
+        }
+        else
+        {
+            auto factor = size / alignment;
+            head += (factor + (size % alignment != 0 ? 1 : 0)) * alignment;
+        }
+        return offset;
     }
 
     size_t write(const std::vector<std::byte>& data)
