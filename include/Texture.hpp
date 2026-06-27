@@ -7,6 +7,7 @@
 
 
 #include <Rendering/Material.hpp>
+#include <compare>
 
 namespace Core
 {
@@ -32,6 +33,11 @@ namespace Core
         Text,
         ShadowMap,
         CubeShadowMap,
+        Billboard,
+        OpaqueDepth,
+        Potential3D,
+        AtmosphereDensity3D,
+        LightTransmittance3D
     };
 
     enum FilterType
@@ -41,6 +47,7 @@ namespace Core
     };
     enum AddressMode
     {
+        None,
         Repeat,
         ClampToEdge,
         ClampToZero,
@@ -57,9 +64,17 @@ namespace Core
     struct SamplerDescriptor {
         AddressMode addressModeU;
         AddressMode addressModeV;
+        AddressMode addressModeW;
         FilterType minFilter;
         FilterType magFilter;
         bool normalizedCoordinates;
+
+        auto operator<=>(const SamplerDescriptor&) const = default;
+    };
+
+    struct SamplerBinding
+    {
+        SamplerDescriptor descriptor;
         MaterialStage stage;
         int bufferID;
     };
@@ -73,7 +88,9 @@ namespace Core
             size_t height,
             PixelFormat format,
             size_t bytesPerPixel,
-            TextureType type
+            TextureType type,
+            bool is3D = false,
+            size_t depth = 1
             );
 
         Texture(const Texture& otehr) = delete;
@@ -84,6 +101,8 @@ namespace Core
         [[nodiscard]] const std::vector<uint8_t>& getData() const { return _data; }
         [[nodiscard]] size_t width() const { return _width; }
         [[nodiscard]] size_t height() const { return _height; }
+        [[nodiscard]] size_t depth() const { return _depth; }
+        [[nodiscard]] bool is3D() const { return _is3D; }
         [[nodiscard]] PixelFormat format() const { return _format; }
         [[nodiscard]] size_t bytesPerPixel() const { return _bytesPerPixel; }
         [[nodiscard]] TextureType type() const { return _type; }
@@ -92,6 +111,7 @@ namespace Core
         std::vector<uint8_t>& getData() { return _data; }
 
         [[nodiscard]] glm::vec4 sample(float u, float v) const;
+        [[nodiscard]] glm::vec4 sample(float u, float v, float w) const;
 
         static std::shared_ptr<Texture> fromFile(const std::string& filePath, TextureType type);
         static std::shared_ptr<Texture> fromText(const std::string& text, int fontSize, const glm::vec4& color);
@@ -101,6 +121,8 @@ namespace Core
         std::vector<uint8_t> _data;
         size_t _width;
         size_t _height;
+        size_t _depth;
+        bool _is3D;
         PixelFormat _format;
         size_t _bytesPerPixel;
         TextureType _type;

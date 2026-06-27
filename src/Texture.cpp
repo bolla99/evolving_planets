@@ -21,13 +21,17 @@ Texture::Texture(
         size_t height,
         PixelFormat format,
         size_t bytesPerPixel,
-        TextureType type
+        TextureType type,
+        bool is3D,
+        size_t depth
         ) :   _data(data),
               _width(width),
               _height(height),
               _format(format),
               _bytesPerPixel(bytesPerPixel),
-              _type(type)
+              _type(type),
+              _is3D(is3D),
+              _depth(depth)
 {}
 
 
@@ -115,17 +119,17 @@ glm::vec4 Texture::sample(float u, float v) const
 {
     if (_data.empty()) return glm::vec4(0.0f);
 
-    // Gestione coordinate (wrap repeat)
-    u = u - std::floor(u);
-    v = v - std::floor(v);
+    // Gestione coordinate (clamp to edge)
+    u = glm::clamp(u, 0.0f, 1.0f);
+    v = glm::clamp(v, 0.0f, 1.0f);
 
-    float fx = u * (float)(_width);
-    float fy = v * (float)(_height);
+    float fx = u * (float)(_width - 1);
+    float fy = v * (float)(_height - 1);
 
-    int x0 = (int)std::floor(fx) % (int)_width;
-    int y0 = (int)std::floor(fy) % (int)_height;
-    int x1 = (x0 + 1) % (int)_width;
-    int y1 = (y0 + 1) % (int)_height;
+    int x0 = (int)std::floor(fx);
+    int y0 = (int)std::floor(fy);
+    int x1 = glm::min(x0 + 1, (int)_width - 1);
+    int y1 = glm::min(y0 + 1, (int)_height - 1);
 
     float dx = fx - std::floor(fx);
     float dy = fy - std::floor(fy);
@@ -156,4 +160,64 @@ glm::vec4 Texture::sample(float u, float v) const
     glm::vec4 p1 = glm::mix(p01, p11, dx);
 
     return glm::mix(p0, p1, dy);
+}
+
+[[nodiscard]] glm::vec4 Texture::sample(float u, float v, float w) const
+{
+    if (!_is3D || _depth == 0) return sample(u, v);
+
+    // Gestione coordinate (clamp to edge)
+    u = glm::clamp(u, 0.0f, 1.0f);
+    v = glm::clamp(v, 0.0f, 1.0f);
+    w = glm::clamp(w, 0.0f, 1.0f);
+
+    float fx = u * (float)(_width - 1);
+    float fy = v * (float)(_height - 1);
+    float fz = w * (float)(_depth - 1);
+
+    int x0 = (int)std::floor(fx);
+    int y0 = (int)std::floor(fy);
+    int z0 = (int)std::floor(fz);
+    int x1 = glm::min(x0 + 1, (int)_width - 1);
+    int y1 = glm::min(y0 + 1, (int)_height - 1);
+    int z1 = glm::min(z0 + 1, (int)_depth - 1);
+
+    float dx = fx - std::floor(fx);
+    float dy = fy - std::floor(fy);
+    float dz = fz - std::floor(fz);
+
+    auto getPixel3D = [&](int x, int y, int z) -> glm::vec4 {
+        size_t index = ((z * _height + y) * _width + x) * _bytesPerPixel;
+        if (index + _bytesPerPixel > _data.size()) return glm::vec4(0.0f);
+
+        if (_format == RGBA32F || _format == R32F) {
+            const float* p = reinterpret_cast<const float*>(&_data[index]);
+            if (_format == RGBA32F) return glm::vec4(p[0], p[1], p[2], p[3]);
+            else return glm::vec4(p[0], 0.0f, 0.0f, 1.0f);
+        } else {
+            const uint8_t* p = &_data[index];
+            if (_format == RGBA8) return glm::vec4(p[0], p[1], p[2], p[3]) / 255.0f;
+            else if (_format == RGB8) return glm::vec4(p[0], p[1], p[2], 255.0f) / 255.0f;
+            else if (_format == R8) return glm::vec4(p[0], 0.0f, 0.0f, 255.0f) / 255.0f;
+        }
+        return glm::vec4(0.0f);
+    };
+
+    glm::vec4 p000 = getPixel3D(x0, y0, z0);
+    glm::vec4 p100 = getPixel3D(x1, y0, z0);
+    glm::vec4 p010 = getPixel3D(x0, y1, z0);
+    glm::vec4 p110 = getPixel3D(x1, y1, z0);
+    glm::vec4 p001 = getPixel3D(x0, y0, z1);
+    glm::vec4 p101 = getPixel3D(x1, y0, z1);
+    glm::vec4 p011 = getPixel3D(x0, y1, z1);
+    glm::vec4 p111 = getPixel3D(x1, y1, z1);
+
+    glm::vec4 p00 = glm::mix(p000, p100, dx);
+    glm::vec4 p10 = glm::mix(p010, p110, dx);
+    glm::vec4 p0 = glm::mix(p00, p10, dy);
+
+    glm::vec4 p01 = glm::mix(p001, p101, dx);
+    glm::vec4 p11 = glm::mix(p011, p111, dx);
+    glm::vec4 p1 = glm::mix(p01, p11, dy);
+    return glm::mix(p0, p1, dz);
 }
