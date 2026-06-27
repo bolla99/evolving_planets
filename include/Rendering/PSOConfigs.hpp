@@ -52,6 +52,12 @@ namespace Rendering
         Compute
     };
 
+    enum BlendingMode
+    {
+        Default,
+        Additive
+    };
+
     struct PSOConfig
     {
         std::string name;
@@ -63,6 +69,7 @@ namespace Rendering
         FillMode fillMode;
         Culling culling;
         DepthTest depthTest;
+        BlendingMode blendingMode;
         ColorPixelFormat colorPixelFormat;
         DepthPixelFormat depthPixelFormat;
         VertexDescriptor vertexDescriptor;
@@ -70,9 +77,9 @@ namespace Rendering
         std::vector<MaterialInfo> globalMaterials;
         std::vector<Core::TextureDescriptor> instanceTextures;
         std::vector<Core::TextureDescriptor> globalTextures;
-        std::vector<Core::SamplerDescriptor> samplers;
+        std::vector<Core::SamplerBinding> samplers;
         int indexBufferSlot = -1;
-        int sampleCount = 4;
+        bool hasMotionVectors = true;
     };
 
     extern const std::unordered_map<std::string, const PSOConfig> psoConfigs;
