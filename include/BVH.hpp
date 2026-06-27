@@ -37,8 +37,10 @@ class BVH
 public:
     explicit BVH(const std::vector<glm::vec3>& vertices, const std::vector<uint32_t>& indices, int nPrimitivesPerLeaf = 8);
 
-    bool intersect(glm::vec3 o, glm::vec3 d, const std::vector<glm::vec3>& vertices, const std::vector<uint32_t>& indices, glm::vec3& intersectionPoint);
-    std::vector<glm::vec3> getLines();
+    bool intersect(glm::vec3 o, glm::vec3 d, const std::vector<glm::vec3>& vertices, const std::vector<uint32_t>& indices, glm::vec3& intersectionPoint) const;
+    std::vector<float> intersect(glm::vec3 o, glm::vec3 d) const;
+
+    std::vector<glm::vec3> getLines() const;
 
 private:
     std::vector<BVHNode> _data;
@@ -46,7 +48,7 @@ private:
     std::vector<BVHTriangle> _triangles;
 
     void build(int nodeID, int start, int count, const std::vector<glm::vec3>& vertices, const std::vector<uint32_t>& indices, int nPrimitivesPerLeaf = 8);
-    void findIntersectingLeaves(int nodeID, const glm::vec3& o, const glm::vec3& inverse_d, std::vector<int>& leaves);
+    void findIntersectingLeaves(int nodeID, const glm::vec3& o, const glm::vec3& inverse_d, std::vector<int>& leaves) const;
 
     static std::vector<glm::vec3> getAABBLines(const AABB& aabb);
     static bool rayAABBIntersection(glm::vec3 o, glm::vec3 inverse_d, AABB aabb);
