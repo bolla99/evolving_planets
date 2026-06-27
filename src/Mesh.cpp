@@ -19,7 +19,16 @@ Geometry::Mesh::Mesh(int numVertices, int numFaces,
                                                             _vertexAttributeNames(vertexAttributeNames),
                                                             _vertexAttributeTypes(vertexAttributeTypes),
                                                             _vertexData(vertexData),
-                                                            _faces(faces) {}
+                                                            _faces(faces)
+{
+    // set bounding sphere and aabb
+    auto bs = _computeBoundingSphere();
+    _boundingSphereCenter = glm::vec3(bs);
+    _boundingSphereRadius = bs.w;
+    _AABBMin = _computeAABBMin();
+    _AABBMax = _computeAABBMax();
+    _centerOfMass = _computeCenterOfMass();
+}
 
 bool Geometry::Mesh::HasAttribute(Core::VertexAttributeName attributeName) const
 {
@@ -250,6 +259,8 @@ std::shared_ptr<Geometry::Mesh> Geometry::Mesh::quad(const glm::vec4& rect, floa
 std::shared_ptr<Geometry::Mesh> Geometry::Mesh::icosphere(
     int subdivisionLevel,
     const glm::vec4& color,
+    float radius,
+    glm::vec3 center,
     bool onlyPosition
 )
 {
@@ -380,6 +391,9 @@ std::shared_ptr<Geometry::Mesh> Geometry::Mesh::icosphere(
             uvs[i] = {u, v};
         }
     }
+
+    // scale vertices with radius
+    for (auto& v : vertices) v =  v * radius + center;
 
     std::vector<Core::VertexAttributeName> attributeNames;
     std::vector<Core::VertexAttributeType> attributeTypes;
@@ -3085,7 +3099,7 @@ std::vector<Core::VertexAttributeName> Geometry::Mesh::getAttributes() const
     return _vertexAttributeNames;
 }
 
-[[nodiscard]] glm::vec4 Geometry::Mesh::boundingSphere() const
+[[nodiscard]] glm::vec4 Geometry::Mesh::_computeBoundingSphere() const
 {
     auto center = glm::vec3(0.0f);
     float radius = 0.0f;
@@ -3097,5 +3111,76 @@ std::vector<Core::VertexAttributeName> Geometry::Mesh::getAttributes() const
         radius = std::max(radius, glm::distance(center, v));
     }
     return {center, radius};
+}
+
+[[nodiscard]] glm::vec3 Geometry::Mesh::_computeAABBMin() const
+{
+    auto min = glm::vec3(std::numeric_limits<float>::max());
+    for (const auto& v : getVertices()) {
+        min = glm::min(min, v);
+    }
+    return min;
+}
+[[nodiscard]] glm::vec3 Geometry::Mesh::_computeAABBMax() const
+{
+    auto max = glm::vec3(std::numeric_limits<float>::lowest());
+    for (const auto& v : getVertices()) {
+        max = glm::max(max, v);
+    }
+    return max;
+}
+
+[[nodiscard]] glm::vec3 Geometry::Mesh::_computeCenterOfMass() const
+{
+    auto center = glm::vec3(0.0f);
+    for (const auto& v : getVertices()) {
+        center += v;
+    }
+    center /= static_cast<float>(getVertices().size());
+    return center;
+}
+
+
+
+std::shared_ptr<Geometry::Mesh> Geometry::Mesh::aabb(glm::vec3 min, glm::vec3 max, glm::vec4 color)
+{
+    auto polygon = std::vector<glm::vec3>();
+    polygon.push_back(min);
+    polygon.push_back(glm::vec3(max.x, min.y, min.z));
+
+    polygon.push_back(min);
+    polygon.push_back(glm::vec3(min.x, max.y, min.z));
+
+    polygon.push_back(glm::vec3(max.x, min.y, min.z));
+    polygon.push_back(glm::vec3(max.x, max.y, min.z));
+
+    polygon.push_back(glm::vec3(min.x, max.y, min.z));
+    polygon.push_back(glm::vec3(max.x, max.y, min.z));
+
+    polygon.push_back(min);
+    polygon.push_back(glm::vec3(min.x, min.y, max.z));
+
+    polygon.push_back(glm::vec3(max.x, min.y, min.z));
+    polygon.push_back(glm::vec3(max.x, min.y, max.z));
+
+    polygon.push_back(glm::vec3(min.x, max.y, min.z));
+    polygon.push_back(glm::vec3(min.x, max.y, max.z));
+
+    polygon.push_back(glm::vec3(max.x, max.y, min.z));
+    polygon.push_back(max);
+
+    polygon.push_back(glm::vec3(min.x, min.y, max.z));
+    polygon.push_back(glm::vec3(max.x, min.y, max.z));
+
+    polygon.push_back(glm::vec3(min.x, min.y, max.z));
+    polygon.push_back(glm::vec3(min.x, max.y, max.z));
+
+    polygon.push_back(glm::vec3(max.x, min.y, max.z));
+    polygon.push_back(glm::vec3(max.x, max.y, max.z));
+
+    polygon.push_back(glm::vec3(min.x, max.y, max.z));
+    polygon.push_back(glm::vec3(max.x, max.y, max.z));
+
+    return Geometry::Mesh::fromPolygon(polygon, color, false);
 }
 

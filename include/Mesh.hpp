@@ -64,6 +64,8 @@ namespace Geometry
         static std::shared_ptr<Mesh> icosphere(
             int subdivisionLevel,
             const glm::vec4& color = noVertexColor(),
+            float radius = 1.0f,
+            glm::vec3 center = glm::vec3(0.0f),
             bool onlyPosition = false
         );
 
@@ -248,6 +250,8 @@ namespace Geometry
             bool onlyPosition = false
         );
 
+        static std::shared_ptr<Mesh> aabb(glm::vec3 min, glm::vec3 max, glm::vec4 color);
+
         // depends on gravity library (ray triangle intersection
         // RAY PICKED DATA
         [[nodiscard]] glm::vec2 uvFromRay(glm::vec3 origin, glm::vec3 direction) const;
@@ -263,7 +267,11 @@ namespace Geometry
             return info;
         }
 
-        [[nodiscard]] glm::vec4 boundingSphere() const;
+        [[nodiscard]] glm::vec3 boundingSphereCenter() const { return _boundingSphereCenter; }
+        [[nodiscard]] float boundingSphereRadius() const { return _boundingSphereRadius; }
+        [[nodiscard]] glm::vec4 AABBMin() const { return {_AABBMin, 1.0f}; }
+        [[nodiscard]] glm::vec4 AABBMax() const { return {_AABBMax, 1.0f}; }
+        [[nodiscard]] glm::vec3 centerOfMass() const { return _centerOfMass; }
 
     private:
         const int _numVertices;
@@ -272,6 +280,17 @@ namespace Geometry
         const std::vector<Core::VertexAttributeType> _vertexAttributeTypes;
         std::vector<std::vector<uint8_t>> _vertexData;
         const std::vector<uint32_t> _faces;
+
+        glm::vec3 _AABBMin;
+        glm::vec3 _AABBMax;
+        glm::vec3 _boundingSphereCenter;
+        float _boundingSphereRadius;
+        glm::vec3 _centerOfMass;
+
+        [[nodiscard]] glm::vec4 _computeBoundingSphere() const;
+        [[nodiscard]] glm::vec3 _computeAABBMin() const;
+        [[nodiscard]] glm::vec3 _computeAABBMax() const;
+        [[nodiscard]] glm::vec3 _computeCenterOfMass() const;
     };
 }
 
