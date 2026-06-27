@@ -31,109 +31,155 @@ public:
         {
             throw std::runtime_error("File read correctly, but no meshes found in the file: " + path);
         }
-        auto mesh = scene->mMeshes[0];
+
+        unsigned int totalVertices = 0;
+        unsigned int totalFaces = 0;
+        for (unsigned int m = 0; m < scene->mNumMeshes; ++m)
+        {
+            totalVertices += scene->mMeshes[m]->mNumVertices;
+            totalFaces += scene->mMeshes[m]->mNumFaces;
+        }
+
+        auto firstMesh = scene->mMeshes[0];
+        bool hasPositions = firstMesh->HasPositions();
+        bool hasColors = firstMesh->HasVertexColors(0);
+        bool hasNormals = firstMesh->HasNormals();
+        bool hasTexCoords = firstMesh->HasTextureCoords(0);
+        bool hasTangents = firstMesh->HasTangentsAndBitangents();
+
         std::vector<Core::VertexAttributeName> vertexAttributeNames;
         std::vector<Core::VertexAttributeType> vertexAttributeTypes;
         std::vector<std::vector<uint8_t>> vertexData;
         std::vector<uint32_t> faces;
-        int numVertices = mesh->mNumVertices;
-        int numFaces = mesh->mNumFaces;
-        int i = 0;
-        if (mesh->HasPositions())
+
+        int attrCount = 0;
+        int posAttrIdx = -1;
+        int colAttrIdx = -1;
+        int normAttrIdx = -1;
+        int texAttrIdx = -1;
+        int tangAttrIdx = -1;
+
+        if (hasPositions)
         {
             vertexAttributeNames.emplace_back(Core::VertexAttributeName::Position);
             vertexAttributeTypes.emplace_back(Core::VertexAttributeType::Float3);
-            vertexData.emplace_back(std::vector<uint8_t>(numVertices * sizeof(float) * 3));
-            for (int j = 0; j < numVertices; ++j)
-            {
-                auto position = mesh->mVertices[j];
-                std::memcpy(vertexData[i].data() + j * sizeof(float) * 3, &position, sizeof(float) * 3);
-            }
-            ++i;
+            vertexData.emplace_back(std::vector<uint8_t>(totalVertices * sizeof(float) * 3));
+            posAttrIdx = attrCount++;
         }
-        if (mesh->HasVertexColors(0))
-        {
-            vertexAttributeNames.emplace_back(Core::VertexAttributeName::Color);
-            vertexAttributeTypes.emplace_back(Core::VertexAttributeType::Float4);
-            vertexData.emplace_back(std::vector<uint8_t>(numVertices * sizeof(float) * 4));
-            for (int j = 0; j < numVertices; ++j)
-            {
-                auto color = mesh->mColors[0][j];
-                std::memcpy(vertexData[i].data() + j * sizeof(float) * 4, &color, sizeof(float) * 4);
-            }
-            ++i;
-        } else
-        {
-            vertexAttributeNames.emplace_back(Core::VertexAttributeName::Color);
-            vertexAttributeTypes.emplace_back(Core::VertexAttributeType::Float4);
-            vertexData.emplace_back(numVertices * sizeof(float) * 4);
-            for (int j = 0; j < numVertices; ++j)
-            {
-                auto color = Geometry::Mesh::noVertexColor();
-                std::memcpy(vertexData[i].data() + j * sizeof(float) * 4, &color, sizeof(float) * 4);
-            }
-            ++i;
-        }
-        if (mesh->HasNormals())
+
+        vertexAttributeNames.emplace_back(Core::VertexAttributeName::Color);
+        vertexAttributeTypes.emplace_back(Core::VertexAttributeType::Float4);
+        vertexData.emplace_back(std::vector<uint8_t>(totalVertices * sizeof(float) * 4));
+        colAttrIdx = attrCount++;
+
+        if (hasNormals)
         {
             vertexAttributeNames.emplace_back(Core::VertexAttributeName::Normal);
             vertexAttributeTypes.emplace_back(Core::VertexAttributeType::Float3);
-            vertexData.emplace_back(std::vector<uint8_t>(numVertices * sizeof(float) * 3));
-            for (int j = 0; j < numVertices; ++j)
-            {
-                auto normal = mesh->mNormals[j];
-                std::memcpy(vertexData[i].data() + j * sizeof(float) * 3, &normal, sizeof(float) * 3);
-            }
-            ++i;
+            vertexData.emplace_back(std::vector<uint8_t>(totalVertices * sizeof(float) * 3));
+            normAttrIdx = attrCount++;
         }
-        if (mesh->HasTextureCoords(0))
+        if (hasTexCoords)
         {
             vertexAttributeNames.emplace_back(Core::VertexAttributeName::TexCoord);
             vertexAttributeTypes.emplace_back(Core::VertexAttributeType::Float2);
-            vertexData.emplace_back(std::vector<uint8_t>(numVertices * sizeof(float) * 2));
-            for (int j = 0; j < numVertices; ++j)
-            {
-                auto texCoord = mesh->mTextureCoords[0][j];
-                std::memcpy(vertexData[i].data() + j * sizeof(float) * 2, &texCoord, sizeof(float) * 2);
-            }
-            ++i;
+            vertexData.emplace_back(std::vector<uint8_t>(totalVertices * sizeof(float) * 2));
+            texAttrIdx = attrCount++;
         }
-        if (mesh->HasTangentsAndBitangents())
+        if (hasTangents)
         {
             vertexAttributeNames.emplace_back(Core::VertexAttributeName::Tangent);
             vertexAttributeTypes.emplace_back(Core::VertexAttributeType::Float3);
-            vertexData.emplace_back(std::vector<uint8_t>(numVertices * sizeof(float) * 3));
-            for (int j = 0; j < numVertices; ++j)
-            {
-                auto tangent = mesh->mTangents[j];
-                std::memcpy(vertexData[i].data() + j * sizeof(float) * 3, &tangent, sizeof(float) * 3);
-            }
-            ++i;
+            vertexData.emplace_back(std::vector<uint8_t>(totalVertices * sizeof(float) * 3));
+            tangAttrIdx = attrCount++;
         }
-        // Prepare index data
-        faces.resize(numFaces * 3); // if the mesh is triangulated
-        for (int j = 0; j < numFaces; ++j)
+
+        faces.resize(totalFaces * 3);
+
+        unsigned int vertexOffset = 0;
+        unsigned int faceOffset = 0;
+
+        for (unsigned int m = 0; m < scene->mNumMeshes; ++m)
         {
-            auto const face = mesh->mFaces[j];
-            if (face.mNumIndices != 3)
+            auto mesh = scene->mMeshes[m];
+            unsigned int numVertices = mesh->mNumVertices;
+            unsigned int numFaces = mesh->mNumFaces;
+
+            if (hasPositions && mesh->HasPositions())
             {
-                throw std::runtime_error("Only triangle meshes are supported; triangulation went bad");
+                for (unsigned int j = 0; j < numVertices; ++j)
+                {
+                    auto position = mesh->mVertices[j];
+                    std::memcpy(vertexData[posAttrIdx].data() + (vertexOffset + j) * sizeof(float) * 3, &position, sizeof(float) * 3);
+                }
             }
-            faces[j*3] = face.mIndices[0];
-            faces[j*3 + 1] = face.mIndices[1];
-            faces[j*3 + 2] = face.mIndices[2];
+            if (mesh->HasVertexColors(0))
+            {
+                for (unsigned int j = 0; j < numVertices; ++j)
+                {
+                    auto color = mesh->mColors[0][j];
+                    std::memcpy(vertexData[colAttrIdx].data() + (vertexOffset + j) * sizeof(float) * 4, &color, sizeof(float) * 4);
+                }
+            }
+            else
+            {
+                for (unsigned int j = 0; j < numVertices; ++j)
+                {
+                    auto color = Geometry::Mesh::noVertexColor();
+                    std::memcpy(vertexData[colAttrIdx].data() + (vertexOffset + j) * sizeof(float) * 4, &color, sizeof(float) * 4);
+                }
+            }
+            if (hasNormals && mesh->HasNormals())
+            {
+                for (unsigned int j = 0; j < numVertices; ++j)
+                {
+                    auto normal = mesh->mNormals[j];
+                    std::memcpy(vertexData[normAttrIdx].data() + (vertexOffset + j) * sizeof(float) * 3, &normal, sizeof(float) * 3);
+                }
+            }
+            if (hasTexCoords && mesh->HasTextureCoords(0))
+            {
+                for (unsigned int j = 0; j < numVertices; ++j)
+                {
+                    auto texCoord = mesh->mTextureCoords[0][j];
+                    std::memcpy(vertexData[texAttrIdx].data() + (vertexOffset + j) * sizeof(float) * 2, &texCoord, sizeof(float) * 2);
+                }
+            }
+            if (hasTangents && mesh->HasTangentsAndBitangents())
+            {
+                for (unsigned int j = 0; j < numVertices; ++j)
+                {
+                    auto tangent = mesh->mTangents[j];
+                    std::memcpy(vertexData[tangAttrIdx].data() + (vertexOffset + j) * sizeof(float) * 3, &tangent, sizeof(float) * 3);
+                }
+            }
+
+            for (unsigned int j = 0; j < numFaces; ++j)
+            {
+                auto const face = mesh->mFaces[j];
+                if (face.mNumIndices != 3)
+                {
+                    throw std::runtime_error("Only triangle meshes are supported; triangulation went bad");
+                }
+                faces[(faceOffset + j)*3] = face.mIndices[0] + vertexOffset;
+                faces[(faceOffset + j)*3 + 1] = face.mIndices[1] + vertexOffset;
+                faces[(faceOffset + j)*3 + 2] = face.mIndices[2] + vertexOffset;
+            }
+
+            vertexOffset += numVertices;
+            faceOffset += numFaces;
         }
 
         SDL_Log("Mesh loaded from path: %s\n"
+                "Number of submeshes combined: %d\n"
                 "Number of vertices: %d\nNumber of faces: %d\nVertex colors: %s\nUV: %s\nNormals: %s\nTangents: %s\n",
-                path.c_str(), numVertices, mesh->mNumFaces,
-                mesh->HasVertexColors(0) ? "yes" : "no",
-                mesh->HasTextureCoords(0) ? "yes" : "no",
-                mesh->HasNormals() ? "yes" : "no",
-                mesh->HasTangentsAndBitangents() ? "yes" : "no"
+                path.c_str(), scene->mNumMeshes, totalVertices, totalFaces,
+                hasColors ? "yes" : "no",
+                hasTexCoords ? "yes" : "no",
+                hasNormals ? "yes" : "no",
+                hasTangents ? "yes" : "no"
                 );
 
-        // get textures
         if (scene->HasTextures())
         {
             SDL_Log("Mesh has textures, but this loader does not support them yet.");
@@ -144,8 +190,8 @@ public:
         }
 
         return std::make_shared<Geometry::Mesh>(
-            numVertices,
-            mesh->mNumFaces, // assuming triangles
+            totalVertices,
+            totalFaces,
             vertexAttributeNames,
             vertexAttributeTypes,
             vertexData,
