@@ -9,6 +9,8 @@
 #include <Rendering/IRenderable.hpp>
 #include <Metal/Metal.hpp>
 
+#include "Rendering/Metal/Renderer.hpp"
+
 namespace Rendering::Metal
 {
     Renderable::Renderable(
@@ -44,48 +46,10 @@ namespace Rendering::Metal
             for (int i = 0; i < textures.size(); i++)
             {
                 if (!textures[i]) continue;
-                auto t = textures[i].get();
+                auto t = textures[i];
                 auto tt = texturesTypes[i];
 
-                auto tDesc = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
-                tDesc->setTextureType(MTL::TextureType2D);
-                switch (textures[i]->format())
-                {
-                case R8:
-                        if (tt == Diffuse)
-                        {
-                            std::cerr << "Rendering::Metal::Renderable::Constructor -> Diffuse texture format R8 is not supported" << std::endl;
-                            throw std::runtime_error("Rendering::Metal::Renderable::Constructor -> Diffuse texture format R8 is not supported");
-                        }
-                        tDesc->setPixelFormat(MTL::PixelFormatR8Unorm);
-                        break;
-                case RGB8:
-                        std::cerr << "Rendering::Metal::Renderable::Constructor -> RGB8 format is not supported in Metal, use RGBA8 instead" << std::endl;
-                        throw std::runtime_error("Rendering::Metal::Renderable::Constructor -> RGB8 format is not supported in Metal, use RGBA8 instead");
-                case RGBA8:
-                        tDesc->setPixelFormat(tt == Diffuse ? MTL::PixelFormatRGBA8Unorm_sRGB : MTL::PixelFormatRGBA8Unorm);
-                        break;
-                case RGBA32F:
-                        tDesc->setPixelFormat(MTL::PixelFormatRGBA32Float);
-                        break;
-                case R32F:
-                        tDesc->setPixelFormat(MTL::PixelFormatR32Float);
-                        break;
-                    default:
-                        throw std::runtime_error("Rendering::Metal::Renderable::Constructor -> Unsupported texture format");
-                }
-                tDesc->setWidth(t->width());
-                tDesc->setHeight(t->height());
-                tDesc->setStorageMode(MTL::StorageModeShared);
-                tDesc->setUsage(MTL::TextureUsageShaderRead);
-
-                auto metalTexture = NS::TransferPtr(device->newTexture(tDesc.get()));
-                metalTexture->replaceRegion(
-                                            MTL::Region::Make2D(0, 0, t->width(), t->height()),
-                                            0,
-                                            t->getData().data(),
-                                            t->bytesPerPixel() * t->width()
-                                            );
+                auto metalTexture = Renderer::getMetalTexture(t, device);
                 _textures.push_back(metalTexture);
             }
         }
@@ -153,7 +117,8 @@ namespace Rendering::Metal
             }
 
             // BIND SAMPLERS
-            bindSamplers(metalCommandEncoder, pso->config.samplers);
+            auto metalPSO = static_cast<PSO*>(pso);
+            bindSamplers(metalCommandEncoder, metalPSO, pso->config.samplers);
 
             // BIND TEXTURES
             bindTextures(metalCommandEncoder, pso->config);
@@ -217,7 +182,8 @@ namespace Rendering::Metal
             }
 
             // BIND SAMPLERS
-            bindSamplers(metalCommandEncoder, pso->config.samplers);
+            auto meshPSO = static_cast<MeshPSO*>(pso);
+            bindSamplers(metalCommandEncoder, meshPSO, pso->config.samplers);
 
             // BIND TEXTURES
             bindTextures(metalCommandEncoder, pso->config);
@@ -253,67 +219,52 @@ namespace Rendering::Metal
         metalCommandEncoder->setTriangleFillMode(MTL::TriangleFillMode::TriangleFillModeFill);
     };
 
-    void Renderable::bindSamplers(MTL::RenderCommandEncoder* encoder, const std::vector<Core::SamplerDescriptor>& samplers) const
+    void Renderable::bindSamplers(MTL::RenderCommandEncoder* encoder, PSO* pso, const std::vector<Core::SamplerBinding>& samplers) const
     {
-        for (auto samplerD : samplers)
+        for (auto samplerConfig : samplers)
         {
-            auto samplerDescriptor = NS::TransferPtr(MTL::SamplerDescriptor::alloc()->init());
-            samplerDescriptor->setMinFilter(
-                samplerD.minFilter == Linear ? MTL::SamplerMinMagFilter::SamplerMinMagFilterLinear : MTL::SamplerMinMagFilter::SamplerMinMagFilterNearest
-            );
-            samplerDescriptor->setMagFilter(
-                samplerD.magFilter == Linear ? MTL::SamplerMinMagFilter::SamplerMinMagFilterLinear : MTL::SamplerMinMagFilter::SamplerMinMagFilterNearest
-            );
+            auto sampler = pso->samplers.at(samplerConfig.descriptor);
 
-            switch (samplerD.addressModeU)
+            if (samplerConfig.stage == Vertex)
             {
-            case AddressMode::Repeat:
-                samplerDescriptor->setSAddressMode(MTL::SamplerAddressMode::SamplerAddressModeRepeat);
-                break;
-            case AddressMode::ClampToEdge:
-                samplerDescriptor->setSAddressMode(MTL::SamplerAddressMode::SamplerAddressModeClampToEdge);
-                break;
-            case AddressMode::ClampToZero:
-                samplerDescriptor->setSAddressMode(MTL::SamplerAddressMode::SamplerAddressModeClampToZero);
-                break;
-            case AddressMode::MirrorRepeat:
-                samplerDescriptor->setSAddressMode(MTL::SamplerAddressMode::SamplerAddressModeMirrorRepeat);
-                break;
+                encoder->setVertexSamplerState(sampler.get(), samplerConfig.bufferID);
             }
-            switch (samplerD.addressModeV)
+            else if (samplerConfig.stage == Fragment)
             {
-            case AddressMode::Repeat:
-                samplerDescriptor->setTAddressMode(MTL::SamplerAddressMode::SamplerAddressModeRepeat);
-                break;
-            case AddressMode::ClampToEdge:
-                samplerDescriptor->setTAddressMode(MTL::SamplerAddressMode::SamplerAddressModeClampToEdge);
-                break;
-            case AddressMode::ClampToZero:
-                samplerDescriptor->setTAddressMode(MTL::SamplerAddressMode::SamplerAddressModeClampToZero);
-                break;
-            case AddressMode::MirrorRepeat:
-                samplerDescriptor->setTAddressMode(MTL::SamplerAddressMode::SamplerAddressModeMirrorRepeat);
-                break;
+                encoder->setFragmentSamplerState(sampler.get(), samplerConfig.bufferID);
             }
+            else if (samplerConfig.stage == Mesh)
+            {
+                encoder->setMeshSamplerState(sampler.get(), samplerConfig.bufferID);
+            }
+            else if (samplerConfig.stage == Object)
+            {
+                encoder->setObjectSamplerState(sampler.get(), samplerConfig.bufferID);
+            }
+        }
+    }
 
-            samplerDescriptor->setNormalizedCoordinates(samplerD.normalizedCoordinates);
-            auto sampler = NS::TransferPtr(encoder->device()->newSamplerState(samplerDescriptor.get()));
+    void Renderable::bindSamplers(MTL::RenderCommandEncoder* encoder, MeshPSO* pso, const std::vector<Core::SamplerBinding>& samplers) const
+    {
+        for (auto samplerConfig : samplers)
+        {
+            auto sampler = pso->samplers.at(samplerConfig.descriptor);
 
-            if (samplerD.stage == Vertex)
+            if (samplerConfig.stage == Vertex)
             {
-                encoder->setVertexSamplerState(sampler.get(), samplerD.bufferID);
+                encoder->setVertexSamplerState(sampler.get(), samplerConfig.bufferID);
             }
-            else if (samplerD.stage == Fragment)
+            else if (samplerConfig.stage == Fragment)
             {
-                encoder->setFragmentSamplerState(sampler.get(), samplerD.bufferID);
+                encoder->setFragmentSamplerState(sampler.get(), samplerConfig.bufferID);
             }
-            else if (samplerD.stage == Mesh)
+            else if (samplerConfig.stage == Mesh)
             {
-                encoder->setMeshSamplerState(sampler.get(), samplerD.bufferID);
+                encoder->setMeshSamplerState(sampler.get(), samplerConfig.bufferID);
             }
-            else if (samplerD.stage == Object)
+            else if (samplerConfig.stage == Object)
             {
-                encoder->setObjectSamplerState(sampler.get(), samplerD.bufferID);
+                encoder->setObjectSamplerState(sampler.get(), samplerConfig.bufferID);
             }
         }
     }

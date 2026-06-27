@@ -7,6 +7,7 @@
 #include "Metal/MTLRenderCommandEncoder.hpp"
 #include <simd/simd.h>
 #include "PSO.hpp"
+#include "MeshPSO.hpp"
 #include "../ICommandEncoder.hpp"
 #include "../IRenderable.hpp"
 #include <Texture.hpp>
@@ -49,7 +50,8 @@ namespace Rendering::Metal
         NS::SharedPtr<MTL::Buffer> _facesBuffer;
 
         // Helper methods for rendering
-        void bindSamplers(MTL::RenderCommandEncoder* encoder, const std::vector<Core::SamplerDescriptor>& samplers) const;
+        void bindSamplers(MTL::RenderCommandEncoder* encoder, PSO* pso, const std::vector<Core::SamplerBinding>& samplers) const;
+        void bindSamplers(MTL::RenderCommandEncoder* encoder, MeshPSO* pso, const std::vector<Core::SamplerBinding>& samplers) const;
         void bindTextures(MTL::RenderCommandEncoder* encoder, const PSOConfig& config) const;
     };
 }
