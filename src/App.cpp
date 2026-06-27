@@ -60,7 +60,7 @@ App::App(
     ImGui::CreateContext();
     ImPlot::CreateContext();
 
-    if (SDL_Init(SDL_INIT_VIDEO) < 0)
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) < 0)
     {
         throw std::runtime_error(SDL_GetError());
     }
