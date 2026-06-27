@@ -27,6 +27,8 @@ enum MaterialType
     VIEW_MATRIX,
     PROJECTION_MATRIX,
     VIEW_PROJECTION_MATRIX,
+    JITTERED_VIEW_PROJECTION_MATRIX,
+    PREVIOUS_VIEW_PROJECTION_MATRIX,
     LIGHTS,
     ROUGHNESS,
     METALLIC,
@@ -36,6 +38,8 @@ enum MaterialType
     CAMERA_FAR_PLANE,
     INVERSE_VIEW_MATRIX,
     INVERSE_PROJECTION_MATRIX,
+    INVERSE_VIEW_PROJECTION_MATRIX,
+    JITTERED_INVERSE_PROJECTION_MATRIX,
     PLANET_CP,
     PLANET_KNOTS_U,
     PLANET_KNOTS_V,
@@ -47,6 +51,24 @@ enum MaterialType
     ROCKY_NOISE_TEXTURE,
     BVH_NODES,
     BVH_PRIMITIVES,
+    BVH_INFO,
+    JITTER,
+    TAAScaling,
+    SUN_DIRECTION,
+    UNLIT_COLOR,
+    BILLBOARD_DATA,
+    WARD_ALPHA,
+    CAMERA_PLANES,
+    PARTICLE_SOFTNESS,
+    POTENTIAL_OCTREE,
+    POTENTIAL_OCTREE_INFO,
+    POTENTIAL_SAMPLING_INFO,
+    SUN_COLOR,
+    TIME,
+    THURST,
+    HEAT,
+    PREVIOUS_MODEL_MATRIX,
+    ATMOSPHERE_SETTINGS
 };
 
 enum MaterialStage
@@ -57,11 +79,49 @@ enum MaterialStage
     Object
 };
 
+struct AtmosphereSettings
+{
+    int SAMPLES = 16;
+    int _padding[3];
+    int SUN_SAMPLES = 8;
+    int _padding2[3];
+    bool jitter = true;
+    int _padding3[3];
+    bool useBakedLightTransmittance = false;
+};
+
+
 struct MaterialInfo
 {
     MaterialType type;
     MaterialStage stage;
     int bufferIndex;
+};
+
+struct PotentialSamplingInfo
+{
+    glm::vec4 min = glm::vec4(0.0f);
+    float edge = 0.0f;
+    float _padding1[3];
+    float nonZeroDensityRadius = 0.0f;
+    float _padding2[3];
+};
+
+struct PotentialOctreeInfo
+{
+    glm::vec4 minBounds = glm::vec4(0.0f);
+    int size = 0;
+    float _padding1[3];
+    float edge = 0.0f;
+    float _padding2[3];
+    float multiplier = 1.0f;
+};
+
+struct BVHInfo
+{
+    int nodesSize = 0;
+    float _padding1[3];
+    int primitivesSize = 0;
 };
 
 struct BVHMaterial
@@ -104,6 +164,16 @@ struct ShadowData
     glm::mat4 lightViewMatrix[MAX_DIRECTIONAL_LIGHTS];
 };
 
+struct BillBoardMaterial
+{
+    glm::vec4 position = glm::vec4(0.0f);
+    glm::vec4 color = glm::vec4(1.0f);
+    float size = 2.0f;
+    int useDepth = 0;
+    float depth = 0.01f;
+    float radius = 0.01f;
+};
+
 struct PointShadowData
 {
     PointShadowData()
@@ -143,16 +213,16 @@ struct PlanetInfoMaterial {
 
 struct CompactPlanetInfoMaterial {
     float planetRadius = 0.0f;
-    float fractalIntensity = 15.0f;
+    float fractalIntensity = 20.0f;
     float fractalScale = 0.01f;
     int useConstantLOD = 0;
     int constantLOD = 0;
-    int useHBAO = 0;
-    int octaves = 12;
+    int octaves = 14;
     float deltaMultiplier = 5.0f;
-    float minDelta = 0.000004f;
-    float maxDelta = 0.001f;
-    int useRayTracingShadows = 1;
+    float minDelta = 0.000003f;
+    float maxDelta = 0.00001f;
+    int useRayTracingShadows = 0;
+    int useSkirts = 1;
 };
 
 template <typename T>
@@ -199,6 +269,10 @@ constexpr std::vector<std::byte> getDefaultBytes(MaterialType type)
         return getBytes(glm::mat4(1.0f));
     case VIEW_PROJECTION_MATRIX:
         return getBytes(glm::mat4(1.0f));
+    case JITTERED_VIEW_PROJECTION_MATRIX:
+        return getBytes(glm::mat4(1.0f));
+    case PREVIOUS_VIEW_PROJECTION_MATRIX:
+        return getBytes(glm::mat4(1.0f));
     case LIGHTS:
         return getBytes(Lights());
     case ROUGHNESS:
@@ -214,6 +288,8 @@ constexpr std::vector<std::byte> getDefaultBytes(MaterialType type)
     case CAMERA_FAR_PLANE:
         return getBytes(1000.0f);
     case INVERSE_PROJECTION_MATRIX:
+        return getBytes(glm::mat4(1.0f));
+    case JITTERED_INVERSE_PROJECTION_MATRIX:
         return getBytes(glm::mat4(1.0f));
     case INVERSE_VIEW_MATRIX:
         return getBytes(glm::mat4(1.0f));
@@ -235,6 +311,44 @@ constexpr std::vector<std::byte> getDefaultBytes(MaterialType type)
         return {};
     case BVH_PRIMITIVES:
         return {};
+    case JITTER:
+        return getBytes(glm::vec2(0.0f));
+    case INVERSE_VIEW_PROJECTION_MATRIX:
+        return getBytes(glm::mat4(1.0f));
+    case TAAScaling:
+        return getBytes(1.0f);
+    case SUN_DIRECTION:
+        return getBytes(glm::vec4(0.0f));
+    case UNLIT_COLOR:
+        return getBytes(glm::vec4(1.0f, 0.0f, 1.0f, 1.0f));
+    case BILLBOARD_DATA:
+        return getBytes(BillBoardMaterial{});
+    case WARD_ALPHA:
+        return getBytes(1.0f);
+    case CAMERA_PLANES:
+        return getBytes(glm::vec2(1.0f));
+    case PARTICLE_SOFTNESS:
+        return getBytes(0.0f);
+    case POTENTIAL_OCTREE:
+        return {};
+    case POTENTIAL_OCTREE_INFO:
+        return getBytes(PotentialOctreeInfo{});
+    case BVH_INFO:
+        return getBytes(BVHInfo{});
+    case POTENTIAL_SAMPLING_INFO:
+        return getBytes(PotentialSamplingInfo{});
+    case SUN_COLOR:
+        return getBytes(glm::vec3(1.0f));
+    case TIME:
+        return getBytes(0.0f);
+    case THURST:
+        return getBytes(0.0f);
+    case HEAT:
+        return getBytes(0.0f);
+    case PREVIOUS_MODEL_MATRIX:
+        return getBytes(glm::mat4(1.0f));
+    case ATMOSPHERE_SETTINGS:
+        return getBytes(AtmosphereSettings{});
     }
     throw std::runtime_error("Invalid material type");
 }
