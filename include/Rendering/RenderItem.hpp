@@ -18,7 +18,7 @@ struct RenderItem
     explicit RenderItem(
         uint64_t renderableID,
         uint64_t materialID,
-        bool castShadows = false,
+        uint32_t castShadows = 0,
         bool wireframe = false,
         glm::ivec3 grid = {0, 0, 0},
         glm::ivec3 threadgroup = {0, 0, 0}
@@ -36,7 +36,7 @@ struct RenderItem
     // members
     uint64_t rID;
     uint64_t mID;
-    bool castShadows;
+    uint32_t castShadows;
     bool wireframe;
     DispatchSize gridSize;
     DispatchSize threadgroupSize;

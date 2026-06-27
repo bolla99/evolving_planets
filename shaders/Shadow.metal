@@ -17,11 +17,19 @@ vertex DirectionalOut vertexDirectionalShadow(
     Vertex vertexIn [[stage_in]],
     constant float4x4& modelMatrix [[buffer(28)]],
     uint instanceID [[instance_id]],
+    constant uint32_t& castShadows [[buffer(26)]],
     constant ShadowData& shadowData [[buffer(30)]]
 ) {
     DirectionalOut vertexOut;
     vertexOut.slice = instanceID;
-    vertexOut.position = shadowData.viewProjectionMatrix[instanceID] * modelMatrix * float4(vertexIn.position, 1.0f);
+
+    // Se il bit corrispondente alla slice attuale (instanceID) non è attivo nella mask,
+    // posizioniamo il vertice fuori dal volume di clipping (z = 2.0 con w = 1.0) per far scartare la primitiva dalla GPU.
+    if ((castShadows & (1 << instanceID)) == 0) {
+        vertexOut.position = float4(0.0f, 0.0f, 2.0f, 1.0f);
+    } else {
+        vertexOut.position = shadowData.viewProjectionMatrix[instanceID] * modelMatrix * float4(vertexIn.position, 1.0f);
+    }
     return vertexOut;
 }
 
