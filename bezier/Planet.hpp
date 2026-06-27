@@ -92,7 +92,7 @@ public:
     [[nodiscard]] std::vector<glm::vec3> normals(const std::vector<std::pair<float, float>>& pairs) const;
 
     // EVOLUTIONARY ALGORITHM RELATED
-    bool mutate(float absMinDistance, float absMaxDistance, float autointersectionStep = 0.01f);
+    bool mutate(float absMinDistance, float absMaxDistance, float autointersectionStep = 0.01f, float radius = 2.0f);
     bool differentialMutate(const Planet& p1, const Planet& p2, float scaleFactor = 0.1f, float autointersectionStep = 0.01f);
     bool continuousCrossover(const Planet& other, Planet& child, float crossoverRate = 0.5f, float autointersectionStep = 0.01f) const;
     bool uniformCrossover(const Planet& other, Planet& child, float crossoverRate = 0.5f, float autointersectionStep = 0.01f) const;

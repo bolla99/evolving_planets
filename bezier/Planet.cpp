@@ -596,7 +596,7 @@ void Planet::recenter()
     }
 }
 
-bool Planet::mutate(float absMinDistance, float absMaxDistance, float autointersectionStep)
+bool Planet::mutate(float absMinDistance, float absMaxDistance, float autointersectionStep, float radius)
 {
     //std::cout << "Mutating planet" << std::endl;
 
@@ -649,7 +649,7 @@ bool Planet::mutate(float absMinDistance, float absMaxDistance, float autointers
     }
     else if (randParallel >= static_cast<int>(_parallels.size()) - 3)
     {
-        // reduce distance for plateay
+        // reduce distance for plateau
         //distance *= 0.1f;
         // translate the whole plateau
         for (auto& point : _parallels[_parallels.size() - 3])
@@ -677,7 +677,7 @@ bool Planet::mutate(float absMinDistance, float absMaxDistance, float autointers
     }
 
     // Propagazione gaussiana della mutazione
-    float sigma = 1.0f; // puoi regolare la "larghezza" della propagazione
+    float sigma = 0.5f * radius; // puoi regolare la "larghezza" della propagazione
     glm::vec3 selected = _parallels[randParallel][randMeridian];
     int nMeridians = static_cast<int>(_parallels[0].size());
     int nPeriodic = 3; // numero di vertici ripetuti per la periodicità
