@@ -137,7 +137,7 @@ bool BVH::mollertrumbore(glm::vec3 ray_origin, glm::vec3 ray_dir, glm::vec3 t1, 
     return false;
 }
 
-void BVH::findIntersectingLeaves(int nodeID, const glm::vec3& o, const glm::vec3& inverse_d, std::vector<int>& leaves)
+void BVH::findIntersectingLeaves(int nodeID, const glm::vec3& o, const glm::vec3& inverse_d, std::vector<int>& leaves) const
 {
     if (rayAABBIntersection(o, inverse_d, _data[nodeID].aabb))
     {
@@ -152,7 +152,7 @@ void BVH::findIntersectingLeaves(int nodeID, const glm::vec3& o, const glm::vec3
 }
 
 
-bool BVH::intersect(glm::vec3 o, glm::vec3 d, const std::vector<glm::vec3>& vertices, const std::vector<uint32_t>& indices, glm::vec3& intersectionPoint)
+bool BVH::intersect(glm::vec3 o, glm::vec3 d, const std::vector<glm::vec3>& vertices, const std::vector<uint32_t>& indices, glm::vec3& intersectionPoint) const
 {
     auto inverse_d = 1.0f / d;
     std::vector<int> leaves;
@@ -178,6 +178,39 @@ bool BVH::intersect(glm::vec3 o, glm::vec3 d, const std::vector<glm::vec3>& vert
         return true;
     }
     return false;
+}
+
+std::vector<float> BVH::intersect(glm::vec3 o, glm::vec3 d) const
+{
+    glm::vec3 safe_d = d;
+    const float EPS = 1e-8f;
+    if (std::abs(safe_d.x) < EPS) safe_d.x = safe_d.x < 0.0f ? -EPS : EPS;
+    if (std::abs(safe_d.y) < EPS) safe_d.y = safe_d.y < 0.0f ? -EPS : EPS;
+    if (std::abs(safe_d.z) < EPS) safe_d.z = safe_d.z < 0.0f ? -EPS : EPS;
+
+    auto inverse_d = 1.0f / safe_d;
+
+    std::vector<int> leaves;
+    std::vector<float> parameters;
+    findIntersectingLeaves(0, o, inverse_d, leaves);
+    if (leaves.empty()) return {};
+    for (auto leaf : leaves)
+    {
+        for (int i = _data[leaf].leftChild; i < _data[leaf].leftChild + _data[leaf].numPrimitives; i++)
+        {
+            float parameter;
+            auto triangle = _triangles[i];
+            if (mollertrumbore(o, d, triangle.v0, triangle.v1, triangle.v2, &parameter))
+            {
+                parameters.push_back(parameter);
+            }
+        }
+    }
+    if (!parameters.empty())
+    {
+        std::sort(parameters.begin(), parameters.end());
+    }
+    return parameters;
 }
 
 std::vector<glm::vec3> BVH::getAABBLines(const AABB& aabb)
@@ -226,7 +259,7 @@ std::vector<glm::vec3> BVH::getAABBLines(const AABB& aabb)
     return lines;
 }
 
-std::vector<glm::vec3> BVH::getLines()
+std::vector<glm::vec3> BVH::getLines() const
 {
     std::vector<glm::vec3> lines;
     for (auto & i : _data)
