@@ -15,6 +15,7 @@
 #include <memory>
 #include "BVH.hpp"
 #include "Rendering/Material.hpp"
+#include "Camera.hpp"
 
 class Planet;
 namespace Core {
@@ -24,8 +25,17 @@ namespace Core {
 
 struct RenderingSettingsComponent
 {
-    float TAAScaling = 0.75f;
-    bool useTAAScaling = true;
+    float TAAScaling = 0.6f;
+    bool useTAAScaling = false;
+    float sharpening = 1.0f;
+    float bloomThreshold = 0.2f;
+    float bloomIntensity = 0.6f;
+    bool useDirectionalShadowsFrontCulling = false;
+    bool usePointShadowsFrontCulling = false;
+    bool useSMAA = false;
+    float smaaThreshold = 0.1f;
+    float smaaIntensity = 0.5f;
+    bool useMSAA = true;
 };
 
 struct BVHRequestComponent
@@ -46,11 +56,11 @@ struct BVHMaterialComponent
 };
 
 struct PlanetConfigComponent {
-    int nParallels = 15;
-    int nMeridians = 15;
+    int nParallels = 14;
+    int nMeridians = 14;
     float baseRadius = 250.0f;
-    int nMutations = 30;
-    int textureSize = 512;
+    int nMutations = 20;
+    int textureSize = 1024;
     bool isDirty = true;
 };
 
@@ -181,11 +191,12 @@ struct TexturesComponent
 // pointer to camera
 struct CameraComponent
 {
-    CameraComponent(const std::shared_ptr<Camera>& c) : camera(c) {
+    CameraComponent(const std::shared_ptr<Camera>& c, bool act = false) : camera(c), active(act) {
         assert(camera && "CameraComponent: camera is null during component construction");
     }
     CameraComponent() = delete;
     std::shared_ptr<Camera> camera;
+    bool active = false;
 };
 
 struct DirectionalLightPassSettings
@@ -345,10 +356,7 @@ struct AmbientLightComponent
 
 struct WardMaterialComponent
 {
-    WardMaterialComponent() = default;
-    float roughness = 0.5f;
-    float metallic = 0.0f;
-    float alpha = 1.0f;
+    WardMaterial mat;
 };
 
 
@@ -423,6 +431,10 @@ struct RigidBodyComponent
         teleportRot = rot;
         teleportRequested = true;
     }
+
+    // FORCES TO BE APPLIED
+    glm::vec3 force = glm::vec3(0.0f);
+    glm::vec3 torque = glm::vec3(0.0f);
 };
 
 struct ChildComponent
@@ -463,14 +475,38 @@ struct PotentialFieldComponent
 
 struct PlayerComponent
 {
-
+    bool active = true;
 };
 
 struct AtmosphereSettingsComponent
 {
     AtmosphereSettings settings;
+    bool bakeDensityAndLightTransmittance = true;
 };
 
+struct GravitySettingsComponent
+{
+    bool enabled = false;
+};
 
+enum Tags
+{
+    MAIN_CAMERA,
+    DEBUG_CAMERA
+};
+
+struct TagComponent
+{
+    TagComponent(const std::vector<Tags>& tags) : tags(tags) {}
+    std::vector<Tags> tags;
+    [[nodiscard]] bool hasTag(Tags tag) const
+    {
+        for (auto t : tags)
+        {
+            if (t == tag) return true;
+        }
+        return false;
+    }
+};
 
 #endif //EVOLVING_PLANETS_COMPONENTS_HPP
