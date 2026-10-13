@@ -12,18 +12,8 @@
 #include "Components.hpp"
 #include "App.hpp"
 #include "timer.hpp"
-
-struct Context
-{
-    Rendering::IRenderer* renderer;
-    SDL_Window* window;
-    AssetManager* assetManager;
-
-    [[nodiscard]] bool isValid() const
-    {
-        return renderer != nullptr && window != nullptr && assetManager != nullptr;
-    }
-};
+#include "Engine/Input.hpp"
+#include "Context.hpp"
 
 struct ISystem
 {
@@ -43,6 +33,7 @@ struct TransformSystem : public ISystem
         {
             auto& transform = world.getComponent<Transform>(entity);
 
+            // set model matrix based on transform for entities with a material component
             if (world.hasComponent<MaterialComponent>(entity))
             {
                 auto& material = world.getComponent<MaterialComponent>(entity);
@@ -50,6 +41,8 @@ struct TransformSystem : public ISystem
                 ctx.renderer->setInstanceMaterial(material.id, getBytes(transform.modelMatrix()), MaterialType::MODEL_MATRIX);
                 ctx.renderer->setInstanceMaterial(material.id, getBytes(glm::inverseTranspose(transform.modelMatrix())), MaterialType::NORMAL_MATRIX);
             }
+
+            // apply transform to lights position and direction
             if (world.hasComponent<PointLightComponent>(entity))
             {
                 auto& light = world.getComponent<PointLightComponent>(entity).light;
@@ -59,6 +52,13 @@ struct TransformSystem : public ISystem
             {
                 auto& light = world.getComponent<DirectionalLightComponent>(entity).light;
                 light.direction = glm::normalize(transform.rotation * light.direction);
+            }
+
+            // apply camera position to its transform
+            if (world.hasComponent<CameraComponent>(entity))
+            {
+                auto& cameraComp = world.getComponent<CameraComponent>(entity);
+                transform.position = cameraComp.camera->getPosition();
             }
 
             transform.previousModelMatrix = transform.modelMatrix();
@@ -72,9 +72,8 @@ struct MouseRaySystem : public ISystem
     void update(World& world, const Context& ctx, float dt) override
     {
         if (!ctx.isValid()) throw std::runtime_error("Invalid context");
-        auto cameras = world.query<CameraComponent>();
-        if (cameras.empty()) return;
-        auto activeCamera = cameras[0];
+        auto activeCamera = world.getActiveCamera();
+        if (activeCamera == 0) return;
         auto activeCameraComponent = world.getComponent<CameraComponent>(activeCamera);
         auto camera = activeCameraComponent.camera;
         auto mouseRays = world.query<MouseRay>();
@@ -143,12 +142,15 @@ struct LightAndShadowSystem : ISystem
         auto pointLightsSize = std::min(MAX_POINT_LIGHTS, static_cast<int>(pointLights.size()));
         for (int i = 0; i < directionalLightsSize; i++)
         {
-            auto lightComp = world.getComponent<DirectionalLightComponent>(directionalLights[i]);
+            auto& lightComp = world.getComponent<DirectionalLightComponent>(directionalLights[i]);
             // loop through the passess for a single light
             for (int p = 0; p < lightComp.nPasses; p++)
             {
-                lightComp.light.color *= lightComp.intensity;
-                lights.directionalLights[i] = lightComp.light;
+                auto light = lightComp.light;
+                light.color *= lightComp.intensity;
+                lights.directionalLights[i+p] = light;
+
+                // lights.numDirectionalLights mean the total number of lights * passes
                 lights.numDirectionalLights++;
 
                 auto dir = glm::normalize(glm::vec3(lightComp.light.direction));
@@ -159,6 +161,7 @@ struct LightAndShadowSystem : ISystem
                     ctx.renderer->setGlobalMaterial(getBytes(glm::vec4(dir, 0.0f)), SUN_DIRECTION);
                     ctx.renderer->setGlobalMaterial(getBytes(lightComp.light.color * lightComp.intensity), SUN_COLOR);
                 }
+
                 auto settings = lightComp.settings[p];
                 auto up = glm::vec3(0.0f, 1.0f, 0.0f);
                 if (std::abs(glm::dot(glm::normalize(dir), up)) > 0.99f) up = glm::vec3(0.0f, 0.0f, 1.0f);
@@ -180,7 +183,7 @@ struct LightAndShadowSystem : ISystem
             auto fov = 90.0f;
             auto aspect = 1.0f;
             auto nearPlane = 0.01f;
-            auto farPlane = 100.0f;
+            auto farPlane = 500.0f;
             auto lightProjMatrix = glm::perspectiveRH_ZO(glm::radians(fov), aspect, nearPlane, farPlane);
             //lightProjMatrix[1][1] *= -1;
             auto pos = glm::vec3(lightComp.light.position);
@@ -317,13 +320,13 @@ struct RendererUpdateSystem : ISystem
 
     void update(World& world, const Context& ctx, float dt) override
     {
+        int nSample = 8;
         auto drawableSize = ctx.renderer->getDrawableSize();
         // JITTER
         // Puoi metterli in una variabile globale o statica
         static int frameIndex = 0;
-        frameIndex = (frameIndex + 1) % 32; // Cicla tra 0 e 15
-        // Esempio di sequenza di Halton precalcolata (in range -0.5 a +0.5 pixel)
-        // Sequenza corretta e scalata tra -0.5 e +0.5
+        frameIndex = (frameIndex + 1) % nSample; // Cicla tra 0 e 15
+
         static const float haltonX[32] = {
             0.00000f, -0.50000f,  0.25000f, -0.25000f,  0.37500f, -0.12500f,  0.12500f, -0.37500f,
             0.43750f, -0.06250f,  0.18750f, -0.31250f,  0.31250f, -0.18750f,  0.06250f, -0.43750f,
@@ -351,9 +354,9 @@ struct RendererUpdateSystem : ISystem
         ctx.renderer->setJitter(glm::vec2(jitterX_pixel, jitterY_pixel));
 
         Timer t1;
-        auto cameras = world.query<CameraComponent>();
-        if (cameras.empty()) return;
-        auto camera = world.getComponent<CameraComponent>(cameras[0]).camera;
+        auto activeCameraEntity = world.getActiveCamera();
+        if (activeCameraEntity == 0) return;
+        auto camera = world.getComponent<CameraComponent>(activeCameraEntity).camera;
         auto viewports = world.query<ViewportComponent>();
         if (viewports.empty()) return;
         auto vp = world.getComponent<ViewportComponent>(viewports[0]);
@@ -502,28 +505,7 @@ struct UpdateWardMaterialSystem : public ISystem
             auto& wardComp = world.getComponent<WardMaterialComponent>(entity);
             auto mID = world.getComponent<MaterialComponent>(entity).id;
             // get bytes from material
-            auto roughness = getBytes(wardComp.roughness);
-            auto metallic = getBytes(wardComp.metallic);
-            auto alpha = getBytes(wardComp.alpha);
-            // check if the instance material has this particular material
-            ctx.renderer->setInstanceMaterial(mID, roughness, MaterialType::ROUGHNESS);
-            ctx.renderer->setInstanceMaterial(mID, metallic, MaterialType::METALLIC);
-            ctx.renderer->setInstanceMaterial(mID, alpha, WARD_ALPHA);
-        }
-    }
-    std::string name() const override { return "Update Ward Material System"; }
-};
-
-struct UpdateCameraTransformSystem : public ISystem
-{
-    void update(World& world, const Context& ctx, float dt) override
-    {
-        auto entities = world.query<CameraComponent, Transform>();
-        for (auto& entity : entities)
-        {
-            auto& cameraComp = world.getComponent<CameraComponent>(entity);
-            auto& transform = world.getComponent<Transform>(entity);
-            transform.position = cameraComp.camera->getPosition();
+            ctx.renderer->setInstanceMaterial(mID, getBytes(wardComp.mat), WARD_MATERIAL);
         }
     }
     std::string name() const override { return "Update Ward Material System"; }
@@ -596,6 +578,19 @@ struct UpdateRenderingSettings : public ISystem
             ctx.renderer->setTAAScaling(settings.TAAScaling);
             ctx.renderer->useTAAScaling = settings.useTAAScaling;
             ctx.renderer->setGlobalMaterial(getBytes(settings.TAAScaling), TAAScaling);
+
+            ctx.renderer->sharpening = settings.sharpening;
+            ctx.renderer->bloomIntensity = settings.bloomIntensity;
+            ctx.renderer->bloomThreshold = settings.bloomThreshold;
+
+            ctx.renderer->useDirectionalShadowsFrontCulling = settings.useDirectionalShadowsFrontCulling;
+            ctx.renderer->usePointShadowsFrontCulling = settings.usePointShadowsFrontCulling;
+
+            ctx.renderer->useSMAA = settings.useSMAA;
+            ctx.renderer->smaaThreshold = settings.smaaThreshold;
+            ctx.renderer->smaaIntensity = settings.smaaIntensity;
+
+            ctx.renderer->useMSAA = settings.useMSAA;
         }
     }
     std::string name() const override { return "Update BVH Material System"; }
@@ -698,6 +693,32 @@ struct UpdateAtmosphereSettings : ISystem
         }
     }
     std::string name() const override { return "Update Atmosphere Settings System"; }
+};
+
+struct BeforePhysicsScriptSystem : public ISystem {
+    void update(World& world, const Context& ctx, float dt) override {
+        auto entities = world.query<ScriptComponent>();
+        for (auto& entity : entities) {
+            auto& comp = world.getComponent<ScriptComponent>(entity);
+            if (comp.beforeUpdate) {
+                comp.beforeUpdate(world, ctx, entity, dt);
+            }
+        }
+    }
+    std::string name() const override { return "Before Physics Script System"; }
+};
+
+struct AfterPhysicsScriptSystem : public ISystem {
+    void update(World& world, const Context& ctx, float dt) override {
+        auto entities = world.query<ScriptComponent>();
+        for (auto& entity : entities) {
+            auto& comp = world.getComponent<ScriptComponent>(entity);
+            if (comp.afterUpdate) {
+                comp.afterUpdate(world, ctx, entity, dt);
+            }
+        }
+    }
+    std::string name() const override { return "After Physics Script System"; }
 };
 
 
