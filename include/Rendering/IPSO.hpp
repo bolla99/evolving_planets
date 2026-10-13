@@ -33,6 +33,8 @@ namespace Rendering
         [[nodiscard]] virtual void* raw() const = 0;
 
         const PSOConfig config;
+
+        bool usingMSAA = false;
     };
 }
 
