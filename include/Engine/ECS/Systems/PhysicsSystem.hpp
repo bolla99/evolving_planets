@@ -12,8 +12,40 @@
 #include "Engine/ECS/Systems.hpp"
 
 
+struct ResetRigidBodies : public ISystem
+{
+    void update(World& world, const Context& ctx, float dt) override
+    {
+        auto rigidbodies = world.query<RigidBodyComponent>();
+        for (auto rb : rigidbodies)
+        {
+            auto& rbComponent = world.getComponent<RigidBodyComponent>(rb);
+            rbComponent.force = glm::vec3(0.0f);
+            rbComponent.torque = glm::vec3(0.0f);
+        }
+    }
+    [[nodiscard]] std::string name() const override { return "Reset Rigidbodies"; }
+};
+
 struct PhysicsSystem : public ISystem
 {
+    std::shared_ptr<GravityAdapter::GravityComputer> gravityComputer;
+
+    // callback: get rigidbodies, and apply the forces
+    static void PhysicsPreTickCallback(btDynamicsWorld* btworld, btScalar timeStep) {
+        auto world = static_cast<World*>(btworld->getWorldUserInfo());
+        if (not world) return;
+
+        auto e_rbs = world->query<RigidBodyComponent>();
+        for (auto e_rb: e_rbs)
+        {
+            auto& rb = world->getComponent<RigidBodyComponent>(e_rb);
+            rb.body->applyCentralForce(btVector3(rb.force.x, rb.force.y, rb.force.z));
+            rb.body->applyTorque(btVector3(rb.torque.x, rb.torque.y, rb.torque.z));
+            rb.body->setAngularVelocity(btVector3(rb.torque.x, rb.torque.y, rb.torque.z));
+        }
+    }
+
     PhysicsSystem()
     {
         // INIT BULLET
@@ -24,10 +56,13 @@ struct PhysicsSystem : public ISystem
 
         dynamicWorld = new btDiscreteDynamicsWorld(dispatcher, overlappingPairCache, solver, collisionConfiguration);
         dynamicWorld->setGravity(btVector3(0, 0, 0));
+        dynamicWorld->setInternalTickCallback(PhysicsPreTickCallback, nullptr, true);
     }
 
     void update(World& world, const Context& ctx, float dt) override
     {
+        // set my world to the dynamic world as world user info
+        dynamicWorld->setWorldUserInfo(&world);
         // CLEAN DELETED RIGID BODIES
         for (auto it = activeBodies.begin(); it != activeBodies.end(); ) {
             if (!world.hasEntity(it->first) || !world.hasComponent<RigidBodyComponent>(it->first)) {
@@ -221,7 +256,7 @@ struct PhysicsSystem : public ISystem
 
         // update dynamic world
         if (dt > 0.0f) {
-            dynamicWorld->stepSimulation(dt, 1);
+            dynamicWorld->stepSimulation(dt, 10, 1.0f / 60.0f);
         }
 
         for (auto& entity : entities) {
@@ -237,6 +272,35 @@ struct PhysicsSystem : public ISystem
                 auto btRot = btTrans.getRotation();
                 tf.rotation = glm::quat(btRot.getW(), btRot.getX(), btRot.getY(), btRot.getZ());
             }
+        }
+
+        // SET GRAVITY
+        auto gravitySettings = world.query<GravitySettingsComponent>();
+        if (gravitySettings.empty()) return;
+        if (world.getComponent<GravitySettingsComponent>(gravitySettings[0]).enabled) {
+            auto planets = world.query<PlanetConfigComponent>();
+            if (planets.empty()) return;
+
+            auto players = world.query<PlayerComponent>();
+            if (players.empty()) return;
+
+            auto player = players[0];
+
+            if (not gravityComputer)
+            {
+                auto planet = planets[0];
+                auto planetMesh = world.getComponent<MeshComponent>(planet).mesh;
+                gravityComputer = std::make_shared<GravityAdapter::GravityComputer>(*planetMesh);
+            }
+
+            auto gravity = gravityComputer->getGravityGPU(world.getComponent<Transform>(player).position);
+            gravity /= 800.0f;
+            std::cout << "Gravity: " << glm::length(gravity) << std::endl;
+            dynamicWorld->setGravity(btVector3(gravity.x, gravity.y, gravity.z));
+        }
+        else
+        {
+            dynamicWorld->setGravity(btVector3(0, 0, 0));
         }
     }
     [[nodiscard]] std::string name() const override { return "PhysicsSystem"; }
