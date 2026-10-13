@@ -18,6 +18,7 @@
 #include "Components.hpp"
 
 
+
 class World
 {
 public:
@@ -88,6 +89,28 @@ public:
         return matches;
     }
 
+    uint64_t getActiveCamera()
+    {
+        auto cameras = query<CameraComponent>();
+        for (auto& camEntity : cameras)
+        {
+            if (getComponent<CameraComponent>(camEntity).active)
+            {
+                return camEntity;
+            }
+        }
+        return cameras.empty() ? 0 : cameras[0];
+    }
+
+    void setActiveCamera(uint64_t targetCameraEntity)
+    {
+        auto cameras = query<CameraComponent>();
+        for (auto& camEntity : cameras)
+        {
+            getComponent<CameraComponent>(camEntity).active = (camEntity == targetCameraEntity);
+        }
+    }
+
 private:
     Pool _entities;
     std::unordered_map<std::type_index, std::unique_ptr<IStorage>> _storages;
@@ -103,5 +126,6 @@ private:
         return *static_cast<Storage<T>*>(_storages[type].get());
     }
 };
+
 
 #endif //EVOLVING_PLANETS_WORLD_HPP
