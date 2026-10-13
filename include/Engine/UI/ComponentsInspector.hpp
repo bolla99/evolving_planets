@@ -158,16 +158,29 @@ struct ComponentsInspector
 
                 bool pass0 = (renderConf.castShadow & 1) != 0;
                 bool pass1 = (renderConf.castShadow & 2) != 0;
+                bool pass2 = (renderConf.castShadow & 4) != 0;
+                bool pass3 = (renderConf.castShadow & 8) != 0;
+
                 ImGui::Text("Shadow Cast Mask:");
-                if (ImGui::Checkbox("Pass 0 (Local / Ship)", &pass0))
+                if (ImGui::Checkbox("Cascade 0", &pass0))
                 {
                     if (pass0) renderConf.castShadow |= 1;
                     else renderConf.castShadow &= ~1;
                 }
-                if (ImGui::Checkbox("Pass 1 (Global / Planet)", &pass1))
+                if (ImGui::Checkbox("Cascade 1", &pass1))
                 {
                     if (pass1) renderConf.castShadow |= 2;
                     else renderConf.castShadow &= ~2;
+                }
+                if (ImGui::Checkbox("Cascade 2", &pass2))
+                {
+                    if (pass2) renderConf.castShadow |= 4;
+                    else renderConf.castShadow &= ~4;
+                }
+                if (ImGui::Checkbox("Cascade 3", &pass3))
+                {
+                    if (pass3) renderConf.castShadow |= 8;
+                    else renderConf.castShadow &= ~8;
                 }
             }
         });
@@ -205,6 +218,11 @@ struct ComponentsInspector
                 ImGui::InputFloat("Near Plane", &cam->nearPlane);
                 ImGui::InputFloat("Far Plane", &cam->farPlane);
                 ImGui::InputFloat("Field of View", &cam->fov);
+
+                if (ImGui::Checkbox("Active Camera", &camera.active) && camera.active)
+                {
+                    world.setActiveCamera(entity);
+                }
             }
         });
         ci.registerComponent<MeshRequestComponent>([](World& world, Context& ctx, EntityID entity, MeshRequestComponent& mesh)
@@ -270,13 +288,23 @@ struct ComponentsInspector
             }
         });
 
-        ci.registerComponent<WardMaterialComponent>([](World& world, Context& ctx, EntityID entity, WardMaterialComponent& material)
+        ci.registerComponent<WardMaterialComponent>([](World& world, Context& ctx, EntityID entity, WardMaterialComponent& comp)
         {
             if (ImGui::CollapsingHeader("Ward Material"))
             {
-                ImGui::SliderFloat("roughness", &material.roughness, 0.0f, 1.0f);
-                ImGui::SliderFloat("metallic", &material.metallic, 0.0f, 1.0f);
-                ImGui::InputFloat("alpha", &material.alpha, 0.01f);
+                ImGui::SliderFloat("roughness", &comp.mat.roughness, 0.0f, 1.0f);
+                ImGui::SliderFloat("metallic", &comp.mat.metallic, 0.0f, 1.0f);
+                ImGui::InputFloat("alpha", &comp.mat.alpha, 0.001f);
+                ImGui::InputFloat("Directional Shadow Bias", &comp.mat.directionalShadowBias, 0.00001f);
+                ImGui::InputFloat("Point Shadow Bias", &comp.mat.pointShadowBias, 0.000001f);
+                ImGui::InputFloat("Shadow World Bias", &comp.mat.shadowWorldBias, 0.000001f);
+                bool usePCF = comp.mat.useShadowPCF;
+                if (ImGui::Checkbox("PCF", &usePCF))
+                {
+                    comp.mat.useShadowPCF = usePCF;
+                }
+                ImGui::InputFloat("Dithering Far Distance", &comp.mat.ditheringFarDistance, 0.1f);
+                ImGui::InputFloat("Dithering Near Distance", &comp.mat.ditheringNearDistance, 0.1f);
             }
         });
         ci.registerComponent<RigidBodyComponent>([](World& world, Context& ctx, EntityID entity, RigidBodyComponent& rb)
@@ -346,6 +374,35 @@ struct ComponentsInspector
                 {
                     mat.useSkirts = useSkirts ? 1 : 0;
                 }
+                ImGui::InputInt("Min LOD", &mat.minLOD);
+                ImGui::InputInt("Max LOD", &mat.maxLOD);
+                ImGui::InputFloat("LOD Exponent", &mat.lodExponent);
+                ImGui::InputFloat("LOD Multiplier", &mat.lodMultiplier);
+                ImGui::InputFloat("Frustum Occlusion Margin", &mat.frustumOcclusionMargin);
+                ImGui::InputFloat("Occlusion View Normal Dot Threshold", &mat.occlusionViewNormalDotThreshold);
+                ImGui::InputFloat("Biased World Position Offset", &mat.biasedWorldPositionOffset);
+                ImGui::InputFloat("Directional Shadow Bias", &mat.directionalShadowBias);
+                ImGui::InputFloat("Point Shadow Bias", &mat.pointShadowBias);
+                bool useShadowPCF = mat.useShadowPCF != 0;
+                if (ImGui::Checkbox("Use PCF", &useShadowPCF))
+                {
+                    mat.useShadowPCF = useShadowPCF ? 1 : 0;
+                }
+                bool useOrenNayar = mat.useOrenNayar != 0;
+                if (ImGui::Checkbox("OrenNayar", &useOrenNayar))
+                {
+                    mat.useOrenNayar = useOrenNayar ? 1 : 0;
+                }
+                bool useObjectShaderVisibilityCulling = mat.useObjectShaderVisibilityCulling != 0;
+                if (ImGui::Checkbox("Use Object Shader Visibility Culling", &useObjectShaderVisibilityCulling))
+                {
+                    mat.useObjectShaderVisibilityCulling = useObjectShaderVisibilityCulling ? 1 : 0;
+                }
+                bool useMeshShaderVisibilityCulling = mat.useMeshShaderVisibilityCulling != 0;
+                if (ImGui::Checkbox("Use Mesh Shader Visibility Culling", &useMeshShaderVisibilityCulling))
+                {
+                    mat.useMeshShaderVisibilityCulling = useMeshShaderVisibilityCulling ? 1 : 0;
+                }
             }
         });
 
@@ -374,6 +431,15 @@ struct ComponentsInspector
             {
                 ImGui::SliderFloat("TAA Scaling", &settings.TAAScaling, 0.0f, 1.0f);
                 ImGui::Checkbox("Use Scaling", &settings.useTAAScaling);
+                ImGui::SliderFloat("Sharpening", &settings.sharpening, 0.0f, 5.0f);
+                ImGui::SliderFloat("Bloom Intensity", &settings.bloomIntensity, 0.0f, 10.0f);
+                ImGui::SliderFloat("Bloom Threshold", &settings.bloomThreshold, 0.0f, 1.0f);
+                ImGui::Checkbox("Use Directional Shadows Front Culling", &settings.useDirectionalShadowsFrontCulling);
+                ImGui::Checkbox("Use Point Shadows Front Culling", &settings.usePointShadowsFrontCulling);
+                ImGui::Checkbox("Use SMAA", &settings.useSMAA);
+                ImGui::SliderFloat("SMAA Threshold", &settings.smaaThreshold, 0.0f, 1.0f);
+                ImGui::SliderFloat("SMAA Intensity", &settings.smaaIntensity, 0.0f, 1.0f);
+                ImGui::Checkbox("Use MSAA", &settings.useMSAA);
             }
         });
 
@@ -454,7 +520,16 @@ struct ComponentsInspector
                 ImGui::InputInt("Num Samples", &settings.settings.SAMPLES);
                 ImGui::InputInt("Num Sun Samples", &settings.settings.SUN_SAMPLES);
                 ImGui::Checkbox("Use Jitter", &settings.settings.jitter);
-                ImGui::Checkbox("Usa baked light transmittance", &settings.settings.useBakedLightTransmittance);
+                ImGui::Checkbox("Use Baked Light Transmittance", &settings.settings.useBakedLightTransmittance);
+                ImGui::InputFloat2("Jitter Multipliers", glm::value_ptr(settings.settings.jitterMultipliers));
+            }
+        });
+
+        ci.registerComponent<GravitySettingsComponent>([](World& world, Context& ctx, EntityID entity, GravitySettingsComponent& settings)
+        {
+            if (ImGui::CollapsingHeader("Gravity Settings"))
+            {
+                ImGui::Checkbox("Enabled", &settings.enabled);
             }
         });
         return ci;
@@ -466,4 +541,3 @@ private:
 };
 
 #endif //EVOLVING_PLANETS_COMPONENTSINSPECTOR_HPP
-
