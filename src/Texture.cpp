@@ -10,6 +10,9 @@
 #include <SDL_ttf.h>
 #include <simd/packed.h>
 #include <glm/glm.hpp>
+#include <algorithm>
+#include <cmath>
+#include <stdexcept>
 
 #include "Apple/Util.hpp"
 
@@ -221,3 +224,111 @@ glm::vec4 Texture::sample(float u, float v) const
     glm::vec4 p1 = glm::mix(p01, p11, dy);
     return glm::mix(p0, p1, dz);
 }
+
+std::shared_ptr<Texture> Texture::upscale3D(size_t newWidth, size_t newHeight, size_t newDepth) const
+{
+    if (!_is3D) {
+        throw std::runtime_error("upscale3D called on a non-3D texture.");
+    }
+    if (_format != R32F) {
+        throw std::runtime_error("upscale3D currently supports R32F format only.");
+    }
+
+    std::vector<uint8_t> newData(newWidth * newHeight * newDepth * sizeof(float));
+    float* dest = reinterpret_cast<float*>(newData.data());
+
+    for (size_t k = 0; k < newDepth; k++) {
+        for (size_t j = 0; j < newHeight; j++) {
+            for (size_t i = 0; i < newWidth; i++) {
+                float u = (static_cast<float>(i) + 0.5f) / static_cast<float>(newWidth);
+                float v = (static_cast<float>(j) + 0.5f) / static_cast<float>(newHeight);
+                float w = (static_cast<float>(k) + 0.5f) / static_cast<float>(newDepth);
+
+                glm::vec4 s = sample(u, v, w);
+                dest[i + j * newWidth + k * newWidth * newHeight] = s.x;
+            }
+        }
+    }
+
+    return std::make_shared<Texture>(
+        newData,
+        newWidth,
+        newHeight,
+        _format,
+        _bytesPerPixel,
+        _type,
+        _is3D,
+        newDepth
+    );
+}
+
+void Texture::applyGaussianBlur3D(float sigma)
+{
+    if (!_is3D) {
+        throw std::runtime_error("applyGaussianBlur3D called on a non-3D texture.");
+    }
+    if (_format != R32F) {
+        throw std::runtime_error("applyGaussianBlur3D currently supports R32F format only.");
+    }
+    if (sigma <= 0.0f) return;
+
+    int r = std::max(1, static_cast<int>(std::ceil(3.0f * sigma)));
+    std::vector<float> kernel(2 * r + 1);
+    float sum = 0.0f;
+    for (int x = -r; x <= r; x++) {
+        float val = std::exp(-static_cast<float>(x * x) / (2.0f * sigma * sigma));
+        kernel[x + r] = val;
+        sum += val;
+    }
+    for (int x = -r; x <= r; x++) {
+        kernel[x + r] /= sum;
+    }
+
+    size_t size = _width * _height * _depth;
+    std::vector<float> temp1(size);
+    std::vector<float> temp2(size);
+    float* srcDst = reinterpret_cast<float*>(_data.data());
+
+    // Pass 1: Blur X (columns)
+    for (int k = 0; k < static_cast<int>(_depth); k++) {
+        for (int j = 0; j < static_cast<int>(_height); j++) {
+            for (int i = 0; i < static_cast<int>(_width); i++) {
+                float val = 0.0f;
+                for (int dx = -r; dx <= r; dx++) {
+                    int neighbor_i = std::max(0, std::min(static_cast<int>(_width) - 1, i + dx));
+                    val += srcDst[neighbor_i + j * _width + k * _width * _height] * kernel[dx + r];
+                }
+                temp1[i + j * _width + k * _width * _height] = val;
+            }
+        }
+    }
+
+    // Pass 2: Blur Y (rows)
+    for (int k = 0; k < static_cast<int>(_depth); k++) {
+        for (int j = 0; j < static_cast<int>(_height); j++) {
+            for (int i = 0; i < static_cast<int>(_width); i++) {
+                float val = 0.0f;
+                for (int dy = -r; dy <= r; dy++) {
+                    int neighbor_j = std::max(0, std::min(static_cast<int>(_height) - 1, j + dy));
+                    val += temp1[i + neighbor_j * _width + k * _width * _height] * kernel[dy + r];
+                }
+                temp2[i + j * _width + k * _width * _height] = val;
+            }
+        }
+    }
+
+    // Pass 3: Blur Z (slices)
+    for (int k = 0; k < static_cast<int>(_depth); k++) {
+        for (int j = 0; j < static_cast<int>(_height); j++) {
+            for (int i = 0; i < static_cast<int>(_width); i++) {
+                float val = 0.0f;
+                for (int dz = -r; dz <= r; dz++) {
+                    int neighbor_k = std::max(0, std::min(static_cast<int>(_depth) - 1, k + dz));
+                    val += temp2[i + j * _width + neighbor_k * _width * _height] * kernel[dz + r];
+                }
+                srcDst[i + j * _width + k * _width * _height] = val;
+            }
+        }
+    }
+}
+

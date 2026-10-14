@@ -113,6 +113,9 @@ namespace Core
         [[nodiscard]] glm::vec4 sample(float u, float v) const;
         [[nodiscard]] glm::vec4 sample(float u, float v, float w) const;
 
+        [[nodiscard]] std::shared_ptr<Texture> upscale3D(size_t newWidth, size_t newHeight, size_t newDepth) const;
+        void applyGaussianBlur3D(float sigma);
+
         static std::shared_ptr<Texture> fromFile(const std::string& filePath, TextureType type);
         static std::shared_ptr<Texture> fromText(const std::string& text, int fontSize, const glm::vec4& color);
         static std::shared_ptr<Texture> fromColor(const glm::vec4& color);
