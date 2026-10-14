@@ -10,6 +10,7 @@ struct Vertex {
 struct VertexOut {
     float4 position [[position]];
     float4 color;
+    float4 worldPosition;
     float4 currentClipPosition;
     float4 previousClipPosition;
 };
@@ -26,7 +27,8 @@ vertex VertexOut vertexUnlitShader(
                                    
 ) {
     VertexOut out;
-    out.position = jitteredViewProjectionMatrix * modelMatrix * float4(in.position, 1.0f);
+    out.worldPosition = modelMatrix * float4(in.position, 1.0f);
+    out.position = jitteredViewProjectionMatrix * out.worldPosition;
     out.color = unlitColor;
     out.currentClipPosition = viewProjectionMatrix * modelMatrix * float4(in.position, 1.0);
     out.previousClipPosition = previousViewProjectionMatrix * previousModelMatrix * float4(in.position, 1.0);
@@ -38,10 +40,25 @@ struct FragmentOut {
     float2 motionVector [[color(1)]]; // La nostra texture RG16Float
 };
 
-fragment FragmentOut fragmentUnlitShader(VertexOut vertexOut [[stage_in]]) {
+fragment FragmentOut fragmentUnlitShader(
+                                         VertexOut in [[stage_in]],
+                                         constant float4& cameraPosition [[buffer(10)]]
+                                         ) {
     FragmentOut out;
-    out.color = vertexOut.color;
-    out.motionVector = motionVector(vertexOut.currentClipPosition, vertexOut.previousClipPosition);
+    
+    // DITHERING
+    float dist = distance(in.worldPosition.xyz, cameraPosition.xyz);
+    auto fadeNearDistance = 2.0f;
+    auto fadeFarDistance = 5.0f;
+    float a = smoothstep(fadeNearDistance, fadeFarDistance, dist);
+
+    float threshold = interleavedGradientNoise(in.position.xy);
+    if (a < threshold) {
+        discard_fragment();
+    }
+    
+    out.color = in.color;
+    out.motionVector = motionVector(in.currentClipPosition, in.previousClipPosition);
     return out;
 }
 

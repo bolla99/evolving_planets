@@ -9,6 +9,7 @@ struct Vertex {
 
 struct VertexOut {
     float4 position [[position]];
+    float4 worldPosition;
     float4 localPosition;
     float2 uv;
     float4 currentClipPosition;
@@ -24,7 +25,8 @@ vertex VertexOut hotMetalVertex(
     constant float4x4& jitteredViewProjectionMatrix [[buffer(30)]]
 ) {
     VertexOut out;
-    out.position = jitteredViewProjectionMatrix * modelMatrix * float4(in.position, 1.0f);
+    out.worldPosition = modelMatrix * float4(in.position, 1.0f);
+    out.position = jitteredViewProjectionMatrix * out.worldPosition;
     out.localPosition = float4(in.position, 1);
     out.uv = in.uv;
     out.currentClipPosition = viewProjectionMatrix * modelMatrix * float4(in.position, 1.0);
@@ -40,7 +42,8 @@ struct FragmentOut {
 fragment FragmentOut hotMetalFragment(
     VertexOut in [[stage_in]],
     constant float& heat [[buffer(10)]],
-    constant float& time [[buffer(11)]]
+    constant float& time [[buffer(11)]],
+    constant float4& cameraPosition [[buffer(12)]]
 ) {
     float2 uvCentrate = in.uv - float2(0.5f, 0.5f);
         float distanzaRadiale = length(uvCentrate) * 2.0f;
@@ -74,6 +77,17 @@ fragment FragmentOut hotMetalFragment(
 
         float flicker = sin(time * 45.0f) * (0.02f * heat) + 1.0f;
         coloreFinale *= flicker;
+    
+        // DITHERING
+        float dist = distance(in.worldPosition.xyz, cameraPosition.xyz);
+        auto fadeNearDistance = 2.0f;
+        auto fadeFarDistance = 5.0f;
+        float a = smoothstep(fadeNearDistance, fadeFarDistance, dist);
+    
+        float threshold = interleavedGradientNoise(in.position.xy);
+        if (a < threshold) {
+            discard_fragment();
+        }
 
         FragmentOut out;
         out.color = float4(coloreFinale, 1.0f);
