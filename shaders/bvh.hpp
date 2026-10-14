@@ -42,6 +42,7 @@ struct BVHIntersection {
     bool happens;
     float t;
     int count;
+    bool isInside;
 };
 
 // IEEE 754
@@ -215,6 +216,7 @@ inline BVHIntersection intersect(
             }
         }
     }
+    res.isInside = res.count % 2 != 0;
     return res;
 }
 
