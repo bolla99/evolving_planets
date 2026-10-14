@@ -153,6 +153,11 @@ namespace Rendering
         }
 
         bool useTAAScaling = true;
+        bool useScaling = true;
+        bool useMSAA = true;
+        bool useSMAA = true;
+        float smaaThreshold = 0.1f;
+        float smaaIntensity = 0.5f;
 
         // DEBUG DRAW FUNCTIONS
         void debugDrawAABB(const glm::vec3& min, const glm::vec3& max, const glm::vec4& color);
@@ -165,6 +170,13 @@ namespace Rendering
 
         void setGlobalTexture(TextureType type, uint64_t);
         void setGlobalTexture(const std::string& name, TextureType type, uint64_t);
+
+        float sharpening = 0.4f;
+        float bloomThreshold = 0.12f;
+        float bloomIntensity = 0.8f;
+
+        bool useDirectionalShadowsFrontCulling = false;
+        bool usePointShadowsFrontCulling = false;
 
     protected:
 

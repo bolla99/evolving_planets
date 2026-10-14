@@ -85,7 +85,7 @@ namespace Rendering::Metal
         int internalWidth = _drawableSize.x;
         int internalHeight = _drawableSize.y;
 
-        if (useTAAScaling)
+        if (useScaling)
         {
             internalWidth = floor(_drawableSize.x * _TAAScaling);
             internalHeight = floor(_drawableSize.y * _TAAScaling);
@@ -142,10 +142,20 @@ namespace Rendering::Metal
         shadowRce.bind(shadowPSO.get());
 
         shadowEncoder->setFrontFacingWinding(MTL::WindingCounterClockwise);
+
+        /*
         if (shadowPSO->config.culling == Front)
             shadowEncoder->setCullMode(MTL::CullModeFront);
         else
             shadowEncoder->setCullMode(MTL::CullModeBack);
+            */
+        if (useDirectionalShadowsFrontCulling)
+        {
+            shadowEncoder->setCullMode(MTL::CullModeFront);
+        } else
+        {
+            shadowEncoder->setCullMode(MTL::CullModeBack);
+        }
 
         bindGlobalMaterials(shadowPSO.get(), shadowEncoder, ringBuffer);
 
@@ -196,10 +206,22 @@ namespace Rendering::Metal
         bindGlobalMaterials(pointShadowPSO.get(), pointShadowEncoder, ringBuffer);
 
         pointShadowEncoder->setFrontFacingWinding(MTL::WindingCounterClockwise);
+
+        /*
         if (pointShadowPSO->config.culling == Front)
             pointShadowEncoder->setCullMode(MTL::CullModeFront);
         else
             pointShadowEncoder->setCullMode(MTL::CullModeBack);
+            */
+
+        if (usePointShadowsFrontCulling)
+        {
+            pointShadowEncoder->setCullMode(MTL::CullModeFront);
+        }
+        else
+        {
+            pointShadowEncoder->setCullMode(MTL::CullModeBack);
+        }
         for (auto layer : renderQueue.queue)
         {
             for (auto& [psoName, items] : layer)
@@ -228,13 +250,27 @@ namespace Rendering::Metal
 
 
         // COLOR TEXTURE
-        if (!_msaaTexture || _msaaTexture->width() != internalWidth || _msaaTexture->height() != internalHeight)
+        if (!_nonMSAATexture || _nonMSAATexture->width() != internalWidth || _nonMSAATexture->height() != internalHeight)
         {
             auto msaaDesc = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
             msaaDesc->setTextureType(MTL::TextureType2D);
-            msaaDesc->setPixelFormat(MTL::PixelFormatBGRA8Unorm);
+            msaaDesc->setPixelFormat(MTL::PixelFormatRGBA16Float);
             msaaDesc->setWidth(internalWidth);
             msaaDesc->setHeight(internalHeight);
+            msaaDesc->setStorageMode(MTL::StorageModePrivate);
+            msaaDesc->setUsage(MTL::TextureUsageRenderTarget | MTL::TextureUsageShaderRead);
+            _nonMSAATexture = NS::TransferPtr(_device->newTexture(msaaDesc.get()));
+        }
+
+        // COLOR TEXTURE
+        if (!_msaaTexture || _msaaTexture->width() != internalWidth || _msaaTexture->height() != internalHeight)
+        {
+            auto msaaDesc = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
+            msaaDesc->setTextureType(MTL::TextureType2DMultisample);
+            msaaDesc->setPixelFormat(MTL::PixelFormatRGBA16Float);
+            msaaDesc->setWidth(internalWidth);
+            msaaDesc->setHeight(internalHeight);
+            msaaDesc->setSampleCount(4);
             msaaDesc->setStorageMode(MTL::StorageModePrivate);
             msaaDesc->setUsage(MTL::TextureUsageRenderTarget | MTL::TextureUsageShaderRead);
             _msaaTexture = NS::TransferPtr(_device->newTexture(msaaDesc.get()));
@@ -254,17 +290,51 @@ namespace Rendering::Metal
             motionVectorDesc->setUsage(MTL::TextureUsageRenderTarget | MTL::TextureUsageShaderRead);
             motionVectorTexture = NS::TransferPtr(_device->newTexture(motionVectorDesc.get()));
         }
+
+        // MOTION VECTOR TEXTURE
+        static NS::SharedPtr<MTL::Texture> msaaMotionVectorTexture = nullptr;
+        if (!msaaMotionVectorTexture || msaaMotionVectorTexture->width() != internalWidth || msaaMotionVectorTexture->height() != internalHeight)
+        {
+            std::cout << "internal resoluzione changed" << std::endl;
+            auto motionVectorDesc = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
+            motionVectorDesc->setTextureType(MTL::TextureType2DMultisample);
+            motionVectorDesc->setPixelFormat(MTL::PixelFormatRG16Float);
+            motionVectorDesc->setWidth(internalWidth);
+            motionVectorDesc->setHeight(internalHeight);
+            motionVectorDesc->setSampleCount(4);
+            motionVectorDesc->setStorageMode(MTL::StorageModePrivate);
+            motionVectorDesc->setUsage(MTL::TextureUsageRenderTarget | MTL::TextureUsageShaderRead);
+            msaaMotionVectorTexture = NS::TransferPtr(_device->newTexture(motionVectorDesc.get()));
+        }
         
         // set color texture
-        passDescriptor->colorAttachments()->object(0)->setTexture(_msaaTexture.get());
-        passDescriptor->colorAttachments()->object(0)->setLoadAction(MTL::LoadAction::LoadActionClear);
-        passDescriptor->colorAttachments()->object(0)->setClearColor(MTL::ClearColor{0.0f, 0.0f, 0.0f, 1.0});
-        passDescriptor->colorAttachments()->object(0)->setStoreAction(MTL::StoreAction::StoreActionStore);
+        if (!useMSAA)
+        {
+            passDescriptor->colorAttachments()->object(0)->setTexture(_nonMSAATexture.get());
+            passDescriptor->colorAttachments()->object(0)->setLoadAction(MTL::LoadAction::LoadActionClear);
+            passDescriptor->colorAttachments()->object(0)->setClearColor(MTL::ClearColor{0.0f, 0.0f, 0.0f, 1.0});
+            passDescriptor->colorAttachments()->object(0)->setStoreAction(MTL::StoreAction::StoreActionStore);
+        } else
+        {
+            passDescriptor->colorAttachments()->object(0)->setTexture(_msaaTexture.get());
+            passDescriptor->colorAttachments()->object(0)->setLoadAction(MTL::LoadAction::LoadActionClear);
+            passDescriptor->colorAttachments()->object(0)->setClearColor(MTL::ClearColor{0.0f, 0.0f, 0.0f, 1.0});
+            passDescriptor->colorAttachments()->object(0)->setStoreAction(MTL::StoreActionMultisampleResolve);
+            passDescriptor->colorAttachments()->object(0)->setResolveTexture(_nonMSAATexture.get());
+        }
         // set motion vectors texture
-        passDescriptor->colorAttachments()->object(1)->setTexture(motionVectorTexture.get());
-        passDescriptor->colorAttachments()->object(1)->setLoadAction(MTL::LoadAction::LoadActionClear);
-        passDescriptor->colorAttachments()->object(1)->setClearColor(MTL::ClearColor{0.0f, 0.0f, 0.0f, 0.0});
-        passDescriptor->colorAttachments()->object(1)->setStoreAction(MTL::StoreAction::StoreActionStore);
+        if (!useMSAA)
+        {
+            passDescriptor->colorAttachments()->object(1)->setTexture(motionVectorTexture.get());
+            passDescriptor->colorAttachments()->object(1)->setLoadAction(MTL::LoadAction::LoadActionClear);
+            passDescriptor->colorAttachments()->object(1)->setClearColor(MTL::ClearColor{0.0f, 0.0f, 0.0f, 0.0});
+            passDescriptor->colorAttachments()->object(1)->setStoreAction(MTL::StoreAction::StoreActionStore);
+        }
+        else
+        {
+            passDescriptor->colorAttachments()->object(1)->setTexture(msaaMotionVectorTexture.get());
+            passDescriptor->colorAttachments()->object(1)->setStoreAction(MTL::StoreAction::StoreActionDontCare);
+        }
 
 
         // DEPTH TEXTURE
@@ -283,10 +353,34 @@ namespace Rendering::Metal
             depthTextureID = addTexture(_depthTexture);
         }
 
-        passDescriptor->depthAttachment()->setTexture(_depthTexture.get());
-        passDescriptor->depthAttachment()->setLoadAction(MTL::LoadAction::LoadActionClear);
-        passDescriptor->depthAttachment()->setStoreAction(MTL::StoreAction::StoreActionStore);
-        passDescriptor->depthAttachment()->setClearDepth(1.0);
+        // DEPTH TEXTURE
+        if (!_msaaDepthTexture || _msaaDepthTexture->width() != internalWidth || _msaaDepthTexture->height() != internalHeight)
+        {
+            auto depthDesc = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
+            depthDesc->setTextureType(MTL::TextureType2DMultisample);
+            depthDesc->setSampleCount(4);
+            depthDesc->setPixelFormat(MTL::PixelFormatDepth32Float);
+            depthDesc->setWidth(internalWidth);
+            depthDesc->setHeight(internalHeight);
+            depthDesc->setStorageMode(MTL::StorageModePrivate);
+            depthDesc->setUsage(MTL::TextureUsageRenderTarget | MTL::TextureUsageShaderRead);
+            _msaaDepthTexture = NS::TransferPtr(_device->newTexture(depthDesc.get()));
+        }
+
+        if (!useMSAA)
+        {
+            passDescriptor->depthAttachment()->setTexture(_depthTexture.get());
+            passDescriptor->depthAttachment()->setLoadAction(MTL::LoadAction::LoadActionClear);
+            passDescriptor->depthAttachment()->setStoreAction(MTL::StoreAction::StoreActionStore);
+            passDescriptor->depthAttachment()->setClearDepth(1.0);
+        }
+        else
+        {
+            passDescriptor->depthAttachment()->setTexture(_msaaDepthTexture.get());
+            passDescriptor->depthAttachment()->setLoadAction(MTL::LoadAction::LoadActionClear);
+            passDescriptor->depthAttachment()->setStoreAction(MTL::StoreAction::StoreActionMultisampleResolve);
+            passDescriptor->depthAttachment()->setResolveTexture(_depthTexture.get());
+        }
 
         // main encoder
         auto encoder = buffer->renderCommandEncoder(passDescriptor.get());
@@ -308,6 +402,9 @@ namespace Rendering::Metal
                 for (auto& [psoName, items] : layer)
                 {
                     auto pso = _pipelineStateObjects.at(psoName);
+
+                    // set correct msaa usage; now raw will return the correct pso
+                    pso->usingMSAA = useMSAA;
                     rce.bind(pso.get());
 
                     if (pso->config.culling == Front)
@@ -352,6 +449,7 @@ namespace Rendering::Metal
                 for (auto& [psoName, items] : layer)
                 {
                     auto pso = _pipelineStateObjects.at(psoName);
+                    pso->usingMSAA = useMSAA;
 
                     rce.bind(pso.get());
 
@@ -399,7 +497,7 @@ namespace Rendering::Metal
         {
             auto upscaledDesc = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
             upscaledDesc->setTextureType(MTL::TextureType2D);
-            upscaledDesc->setPixelFormat(_layer->pixelFormat()); // Stesso formato del drawable
+            upscaledDesc->setPixelFormat(MTL::PixelFormatRGBA16Float); // HDR format for upscale target
             upscaledDesc->setWidth(_drawableSize.x);
             upscaledDesc->setHeight(_drawableSize.y);
             
@@ -425,7 +523,78 @@ namespace Rendering::Metal
             _sharpenedTexture = NS::TransferPtr(_device->newTexture(sharpenedDesc.get()));
         }
 
-        // INIZIALIZZAZIONE (Una tantum)
+        // --- ALLOCATE HDR BLOOM TEXTURES AND COMPOSITE TEXTURES ---
+        int bloomWidth = _drawableSize.x / 2;
+        int bloomHeight = _drawableSize.y / 2;
+        if (bloomWidth < 1) bloomWidth = 1;
+        if (bloomHeight < 1) bloomHeight = 1;
+
+        static NS::SharedPtr<MTL::Texture> _bloomTextureDown = nullptr;
+        if (!_bloomTextureDown || _bloomTextureDown->width() != bloomWidth || _bloomTextureDown->height() != bloomHeight)
+        {
+            auto desc = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
+            desc->setTextureType(MTL::TextureType2D);
+            desc->setPixelFormat(MTL::PixelFormatRGBA16Float);
+            desc->setWidth(bloomWidth);
+            desc->setHeight(bloomHeight);
+            desc->setStorageMode(MTL::StorageModePrivate);
+            desc->setUsage(MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite);
+            _bloomTextureDown = NS::TransferPtr(_device->newTexture(desc.get()));
+        }
+
+        static NS::SharedPtr<MTL::Texture> _bloomTextureTemp = nullptr;
+        if (!_bloomTextureTemp || _bloomTextureTemp->width() != bloomWidth || _bloomTextureTemp->height() != bloomHeight)
+        {
+            auto desc = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
+            desc->setTextureType(MTL::TextureType2D);
+            desc->setPixelFormat(MTL::PixelFormatRGBA16Float);
+            desc->setWidth(bloomWidth);
+            desc->setHeight(bloomHeight);
+            desc->setStorageMode(MTL::StorageModePrivate);
+            desc->setUsage(MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite);
+            _bloomTextureTemp = NS::TransferPtr(_device->newTexture(desc.get()));
+        }
+
+        static NS::SharedPtr<MTL::Texture> _bloomTextureFinal = nullptr;
+        if (!_bloomTextureFinal || _bloomTextureFinal->width() != bloomWidth || _bloomTextureFinal->height() != bloomHeight)
+        {
+            auto desc = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
+            desc->setTextureType(MTL::TextureType2D);
+            desc->setPixelFormat(MTL::PixelFormatRGBA16Float);
+            desc->setWidth(bloomWidth);
+            desc->setHeight(bloomHeight);
+            desc->setStorageMode(MTL::StorageModePrivate);
+            desc->setUsage(MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite);
+            _bloomTextureFinal = NS::TransferPtr(_device->newTexture(desc.get()));
+        }
+
+        static NS::SharedPtr<MTL::Texture> _combinedHDRTexture = nullptr;
+        if (!_combinedHDRTexture || _combinedHDRTexture->width() != _drawableSize.x || _combinedHDRTexture->height() != _drawableSize.y)
+        {
+            auto desc = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
+            desc->setTextureType(MTL::TextureType2D);
+            desc->setPixelFormat(MTL::PixelFormatRGBA16Float);
+            desc->setWidth(_drawableSize.x);
+            desc->setHeight(_drawableSize.y);
+            desc->setStorageMode(MTL::StorageModePrivate);
+            desc->setUsage(MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite);
+            _combinedHDRTexture = NS::TransferPtr(_device->newTexture(desc.get()));
+        }
+
+        static NS::SharedPtr<MTL::Texture> _tonemappedTexture = nullptr;
+        if (!_tonemappedTexture || _tonemappedTexture->width() != _drawableSize.x || _tonemappedTexture->height() != _drawableSize.y)
+        {
+            auto desc = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
+            desc->setTextureType(MTL::TextureType2D);
+            desc->setPixelFormat(_layer->pixelFormat());
+            desc->setWidth(_drawableSize.x);
+            desc->setHeight(_drawableSize.y);
+            desc->setStorageMode(MTL::StorageModePrivate);
+            desc->setUsage(MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite);
+            _tonemappedTexture = NS::TransferPtr(_device->newTexture(desc.get()));
+        }
+
+        // TEMPORAL SCALER
         if (
             !_temporalScaler || _temporalScaler->outputWidth() != _drawableSize.x || _temporalScaler->outputHeight() != _drawableSize.y
             || _temporalScaler->inputWidth() != internalWidth || _temporalScaler->inputHeight() != internalHeight
@@ -436,30 +605,42 @@ namespace Rendering::Metal
             scalerDesc->setInputHeight(internalHeight);
             scalerDesc->setOutputWidth(_drawableSize.x);
             scalerDesc->setOutputHeight(_drawableSize.y);
-            scalerDesc->setColorTextureFormat(MTL::PixelFormatBGRA8Unorm);
+            scalerDesc->setColorTextureFormat(MTL::PixelFormatRGBA16Float); // Input is HDR
             scalerDesc->setDepthTextureFormat(MTL::PixelFormatDepth32Float);
             scalerDesc->setMotionTextureFormat(MTL::PixelFormatRG16Float);
-            scalerDesc->setOutputTextureFormat(MTL::PixelFormatBGRA8Unorm);
+            scalerDesc->setOutputTextureFormat(MTL::PixelFormatRGBA16Float); // Output is HDR
             _temporalScaler = NS::TransferPtr(scalerDesc->newTemporalScaler(_device.get()));
             _temporalScaler->setDepthReversed(false);
             _temporalScaler->setReset(true);
+        }
 
+        // SPATIAL SCALER
+        if (
+            !_spatialScaler || _spatialScaler->outputWidth() != _drawableSize.x || _spatialScaler->outputHeight() != _drawableSize.y
+            || _spatialScaler->inputWidth() != internalWidth || _spatialScaler->inputHeight() != internalHeight
+            )
+        {
+            auto scalerDesc = NS::TransferPtr(MTLFX::SpatialScalerDescriptor::alloc()->init());
+            scalerDesc->setInputWidth(internalWidth);
+            scalerDesc->setInputHeight(internalHeight);
+            scalerDesc->setOutputWidth(_drawableSize.x);
+            scalerDesc->setOutputHeight(_drawableSize.y);
+            scalerDesc->setColorTextureFormat(MTL::PixelFormatRGBA16Float); // Input is HDR
+            scalerDesc->setOutputTextureFormat(MTL::PixelFormatRGBA16Float); // Output is HDR
+            _spatialScaler = NS::TransferPtr(scalerDesc->newSpatialScaler(_device.get()));
         }
 
         // -----------------------------------------------------
-        // METALFX PASS
+        // METALFX PASS (IF ENABLED)
         // -----------------------------------------------------
-        auto target = _msaaTexture.get();
         if (useTAAScaling)
         {
-            target = _sharpenedTexture.get();
-            _temporalScaler->setColorTexture(_msaaTexture.get()); // ATTENZIONE: Questo era il tuo output 3D nel codice precedente, assicurati sia la _internalColorTexture!
+            _temporalScaler->setColorTexture(_nonMSAATexture.get());
             _temporalScaler->setDepthTexture(_depthTexture.get());
             _temporalScaler->setMotionTexture(motionVectorTexture.get());
 
             _temporalScaler->setMotionVectorScaleX(internalWidth);
             _temporalScaler->setMotionVectorScaleY(internalHeight);
-
 
             // La texture di destinazione ad ALTA RISOLUZIONE
             _temporalScaler->setOutputTexture(_upscaledTexture.get());
@@ -470,19 +651,236 @@ namespace Rendering::Metal
 
             // Eseguiamo l'upscaling
             _temporalScaler->encodeToCommandBuffer(buffer);
+        }
+        else if (useScaling)
+        {
+            _spatialScaler->setColorTexture(_nonMSAATexture.get());
 
-            // -----------------------------------------------------
-            // SHARPENING COMPUTE PASS
-            // -----------------------------------------------------
+            // L'output è la texture nativa della finestra/schermo (es. 4K)
+            _spatialScaler->setOutputTexture(_upscaledTexture.get());
+
+            // 3. Inietta i comandi di scaling nel command buffer
+            _spatialScaler->encodeToCommandBuffer(buffer);
+        }
+
+        // -----------------------------------------------------
+        // COMPUTE-BASED POST-PROCESSING PIPELINE
+        // -----------------------------------------------------
+        MTL::Texture* hdrSceneTexture = useScaling ? _upscaledTexture.get() : _nonMSAATexture.get();
+
+        // Pass 1: Bloom Threshold & Downsample (e.g. from full res to 1/2 res)
+        {
+            auto computeEncoder = buffer->computeCommandEncoder();
+            auto bloomThresholdPSO = _pipelineStateObjects["BloomThreshold"];
+            computeEncoder->setComputePipelineState(static_cast<MTL::ComputePipelineState*>(bloomThresholdPSO->raw()));
+            computeEncoder->setTexture(hdrSceneTexture, 0);
+            computeEncoder->setTexture(_bloomTextureDown.get(), 1);
+            computeEncoder->setBytes(&bloomThreshold, sizeof(float), 0);
+
+            auto rawState = static_cast<MTL::ComputePipelineState*>(bloomThresholdPSO->raw());
+            auto maxThreads = rawState->maxTotalThreadsPerThreadgroup();
+            auto widthThreads = rawState->threadExecutionWidth();
+            auto heightThreads = maxThreads / widthThreads;
+
+            MTL::Size threadgroupSize = MTL::Size(widthThreads, heightThreads, 1);
+            MTL::Size gridSize = MTL::Size(bloomWidth, bloomHeight, 1);
+            computeEncoder->dispatchThreads(gridSize, threadgroupSize);
+            computeEncoder->endEncoding();
+        }
+
+        // Pass 2: Bloom Blur Horizontal
+        {
+            auto computeEncoder = buffer->computeCommandEncoder();
+            auto bloomBlurHPSO = _pipelineStateObjects["BloomBlurH"];
+            computeEncoder->setComputePipelineState(static_cast<MTL::ComputePipelineState*>(bloomBlurHPSO->raw()));
+            computeEncoder->setTexture(_bloomTextureDown.get(), 0);
+            computeEncoder->setTexture(_bloomTextureTemp.get(), 1);
+
+            auto rawState = static_cast<MTL::ComputePipelineState*>(bloomBlurHPSO->raw());
+            auto maxThreads = rawState->maxTotalThreadsPerThreadgroup();
+            auto widthThreads = rawState->threadExecutionWidth();
+            auto heightThreads = maxThreads / widthThreads;
+
+            MTL::Size threadgroupSize = MTL::Size(widthThreads, heightThreads, 1);
+            MTL::Size gridSize = MTL::Size(bloomWidth, bloomHeight, 1);
+            computeEncoder->dispatchThreads(gridSize, threadgroupSize);
+            computeEncoder->endEncoding();
+        }
+
+        // Pass 3: Bloom Blur Vertical
+        {
+            auto computeEncoder = buffer->computeCommandEncoder();
+            auto bloomBlurVPSO = _pipelineStateObjects["BloomBlurV"];
+            computeEncoder->setComputePipelineState(static_cast<MTL::ComputePipelineState*>(bloomBlurVPSO->raw()));
+            computeEncoder->setTexture(_bloomTextureTemp.get(), 0);
+            computeEncoder->setTexture(_bloomTextureFinal.get(), 1);
+
+            auto rawState = static_cast<MTL::ComputePipelineState*>(bloomBlurVPSO->raw());
+            auto maxThreads = rawState->maxTotalThreadsPerThreadgroup();
+            auto widthThreads = rawState->threadExecutionWidth();
+            auto heightThreads = maxThreads / widthThreads;
+
+            MTL::Size threadgroupSize = MTL::Size(widthThreads, heightThreads, 1);
+            MTL::Size gridSize = MTL::Size(bloomWidth, bloomHeight, 1);
+            computeEncoder->dispatchThreads(gridSize, threadgroupSize);
+            computeEncoder->endEncoding();
+        }
+
+        // Pass 4: Bloom Combine (hdrSceneTexture + bloom -> _combinedHDRTexture)
+        {
+            auto computeEncoder = buffer->computeCommandEncoder();
+            auto bloomCombinePSO = _pipelineStateObjects["BloomCombine"];
+            computeEncoder->setComputePipelineState(static_cast<MTL::ComputePipelineState*>(bloomCombinePSO->raw()));
+            computeEncoder->setTexture(hdrSceneTexture, 0);
+            computeEncoder->setTexture(_bloomTextureFinal.get(), 1);
+            computeEncoder->setTexture(_combinedHDRTexture.get(), 2);
+            computeEncoder->setBytes(&bloomIntensity, sizeof(float), 0);
+
+            auto rawState = static_cast<MTL::ComputePipelineState*>(bloomCombinePSO->raw());
+            auto maxThreads = rawState->maxTotalThreadsPerThreadgroup();
+            auto widthThreads = rawState->threadExecutionWidth();
+            auto heightThreads = maxThreads / widthThreads;
+
+            MTL::Size threadgroupSize = MTL::Size(widthThreads, heightThreads, 1);
+            MTL::Size gridSize = MTL::Size(_drawableSize.x, _drawableSize.y, 1);
+            computeEncoder->dispatchThreads(gridSize, threadgroupSize);
+            computeEncoder->endEncoding();
+        }
+
+        // Pass 5: Tonemapping (_combinedHDRTexture -> _tonemappedTexture LDR)
+        {
+            auto computeEncoder = buffer->computeCommandEncoder();
+            auto tonemappingPSO = _pipelineStateObjects["Tonemapping"];
+            computeEncoder->setComputePipelineState(static_cast<MTL::ComputePipelineState*>(tonemappingPSO->raw()));
+            computeEncoder->setTexture(_combinedHDRTexture.get(), 0);
+            computeEncoder->setTexture(_tonemappedTexture.get(), 1);
+
+            auto rawState = static_cast<MTL::ComputePipelineState*>(tonemappingPSO->raw());
+            auto maxThreads = rawState->maxTotalThreadsPerThreadgroup();
+            auto widthThreads = rawState->threadExecutionWidth();
+            auto heightThreads = maxThreads / widthThreads;
+
+            MTL::Size threadgroupSize = MTL::Size(widthThreads, heightThreads, 1);
+            MTL::Size gridSize = MTL::Size(_drawableSize.x, _drawableSize.y, 1);
+            computeEncoder->dispatchThreads(gridSize, threadgroupSize);
+            computeEncoder->endEncoding();
+        }
+
+        // SMAA ANTIALIASING PASS
+        // Alloca le texture necessarie per SMAA
+        static NS::SharedPtr<MTL::Texture> _smaaEdgeTexture = nullptr;
+        if (!_smaaEdgeTexture || _smaaEdgeTexture->width() != _drawableSize.x || _smaaEdgeTexture->height() != _drawableSize.y)
+        {
+            auto desc = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
+            desc->setTextureType(MTL::TextureType2D);
+            desc->setPixelFormat(MTL::PixelFormatRGBA16Float);
+            desc->setWidth(_drawableSize.x);
+            desc->setHeight(_drawableSize.y);
+            desc->setStorageMode(MTL::StorageModePrivate);
+            desc->setUsage(MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite);
+            _smaaEdgeTexture = NS::TransferPtr(_device->newTexture(desc.get()));
+        }
+
+        static NS::SharedPtr<MTL::Texture> _smaaBlendTexture = nullptr;
+        if (!_smaaBlendTexture || _smaaBlendTexture->width() != _drawableSize.x || _smaaBlendTexture->height() != _drawableSize.y)
+        {
+            auto desc = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
+            desc->setTextureType(MTL::TextureType2D);
+            desc->setPixelFormat(MTL::PixelFormatRGBA16Float);
+            desc->setWidth(_drawableSize.x);
+            desc->setHeight(_drawableSize.y);
+            desc->setStorageMode(MTL::StorageModePrivate);
+            desc->setUsage(MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite);
+            _smaaBlendTexture = NS::TransferPtr(_device->newTexture(desc.get()));
+        }
+
+        static NS::SharedPtr<MTL::Texture> _smaaOutputTexture = nullptr;
+        if (!_smaaOutputTexture || _smaaOutputTexture->width() != _drawableSize.x || _smaaOutputTexture->height() != _drawableSize.y)
+        {
+            auto desc = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
+            desc->setTextureType(MTL::TextureType2D);
+            desc->setPixelFormat(MTL::PixelFormatRGBA16Float);
+            desc->setWidth(_drawableSize.x);
+            desc->setHeight(_drawableSize.y);
+            desc->setStorageMode(MTL::StorageModePrivate);
+            desc->setUsage(MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite);
+            _smaaOutputTexture = NS::TransferPtr(_device->newTexture(desc.get()));
+        }
+
+        if (useSMAA)
+        // Pass 6a: SMAA Edge Detection (_tonemappedTexture -> _smaaEdgeTexture)
+        {
+            auto computeEncoder = buffer->computeCommandEncoder();
+            auto edgeDetectionPSO = _pipelineStateObjects["SMAAEdgeDetection"];
+            computeEncoder->setComputePipelineState(static_cast<MTL::ComputePipelineState*>(edgeDetectionPSO->raw()));
+            computeEncoder->setTexture(_tonemappedTexture.get(), 0);
+            computeEncoder->setTexture(_smaaEdgeTexture.get(), 1);
+            computeEncoder->setBytes(&smaaThreshold, sizeof(float), 0);
+
+            auto rawState = static_cast<MTL::ComputePipelineState*>(edgeDetectionPSO->raw());
+            auto maxThreads = rawState->maxTotalThreadsPerThreadgroup();
+            auto widthThreads = rawState->threadExecutionWidth();
+            auto heightThreads = maxThreads / widthThreads;
+
+            MTL::Size threadgroupSize = MTL::Size(widthThreads, heightThreads, 1);
+            MTL::Size gridSize = MTL::Size(_drawableSize.x, _drawableSize.y, 1);
+            computeEncoder->dispatchThreads(gridSize, threadgroupSize);
+            computeEncoder->endEncoding();
+
+        // Pass 6b: SMAA Blend Weight Calculation (_smaaEdgeTexture -> _smaaBlendTexture)
+            computeEncoder = buffer->computeCommandEncoder();
+            auto blendWeightPSO = _pipelineStateObjects["SMAABlendWeight"];
+            computeEncoder->setComputePipelineState(static_cast<MTL::ComputePipelineState*>(blendWeightPSO->raw()));
+            computeEncoder->setTexture(_smaaEdgeTexture.get(), 0);
+            computeEncoder->setTexture(_smaaBlendTexture.get(), 1);
+            computeEncoder->setBytes(&smaaIntensity, sizeof(float), 0);
+
+            rawState = static_cast<MTL::ComputePipelineState*>(blendWeightPSO->raw());
+            maxThreads = rawState->maxTotalThreadsPerThreadgroup();
+            widthThreads = rawState->threadExecutionWidth();
+            heightThreads = maxThreads / widthThreads;
+
+            threadgroupSize = MTL::Size(widthThreads, heightThreads, 1);
+            gridSize = MTL::Size(_drawableSize.x, _drawableSize.y, 1);
+            computeEncoder->dispatchThreads(gridSize, threadgroupSize);
+            computeEncoder->endEncoding();
+
+        // Pass 6c: SMAA Neighborhood Blending (_tonemappedTexture + _smaaBlendTexture -> _smaaOutputTexture)
+            computeEncoder = buffer->computeCommandEncoder();
+            auto neighborhoodBlendingPSO = _pipelineStateObjects["SMAANeighborhoodBlending"];
+            computeEncoder->setComputePipelineState(static_cast<MTL::ComputePipelineState*>(neighborhoodBlendingPSO->raw()));
+            computeEncoder->setTexture(_tonemappedTexture.get(), 0);
+            computeEncoder->setTexture(_smaaBlendTexture.get(), 1);
+            computeEncoder->setTexture(_smaaOutputTexture.get(), 2);
+            computeEncoder->setBytes(&smaaIntensity, sizeof(float), 0);
+
+            rawState = static_cast<MTL::ComputePipelineState*>(neighborhoodBlendingPSO->raw());
+            maxThreads = rawState->maxTotalThreadsPerThreadgroup();
+            widthThreads = rawState->threadExecutionWidth();
+            heightThreads = maxThreads / widthThreads;
+
+            threadgroupSize = MTL::Size(widthThreads, heightThreads, 1);
+            gridSize = MTL::Size(_drawableSize.x, _drawableSize.y, 1);
+            computeEncoder->dispatchThreads(gridSize, threadgroupSize);
+            computeEncoder->endEncoding();
+        }
+
+        // Aggiorna il target per lo sharpening (ora la input è l'output di SMAA anziché tonemapping)
+        MTL::Texture* sharpeningInput = _tonemappedTexture.get();
+        if (useSMAA)
+        {
+            sharpeningInput = _smaaOutputTexture.get();
+        }
+
+        // Pass 6: Sharpening (sharpeningInput -> _sharpenedTexture CAS)
+        {
             auto computeEncoder = buffer->computeCommandEncoder();
             auto sharpeningPSO = _pipelineStateObjects["Sharpening"];
             computeEncoder->setComputePipelineState(static_cast<MTL::ComputePipelineState*>(sharpeningPSO->raw()));
-
-            computeEncoder->setTexture(_upscaledTexture.get(), 0);
+            computeEncoder->setTexture(sharpeningInput, 0);
             computeEncoder->setTexture(_sharpenedTexture.get(), 1);
 
-            float sharpnessVal = 0.4f; // Forza ottimale per il filtro CAS (da 0.0 a 1.0)
-            computeEncoder->setBytes(&sharpnessVal, sizeof(float), 0);
+            computeEncoder->setBytes(&sharpening, sizeof(float), 0);
 
             auto rawState = static_cast<MTL::ComputePipelineState*>(sharpeningPSO->raw());
             auto maxThreads = rawState->maxTotalThreadsPerThreadgroup();
@@ -495,7 +893,9 @@ namespace Rendering::Metal
             computeEncoder->dispatchThreads(gridSize, threadgroupSize);
             computeEncoder->endEncoding();
         }
-        
+
+        auto target = _sharpenedTexture.get();
+
         auto blitEncoder = buffer->blitCommandEncoder();
 
         auto drawable = _layer->nextDrawable();

@@ -20,6 +20,7 @@
 
 #include "RingBuffer.hpp"
 #include "../../Engine/ECS/Pool.hpp"
+#include "MetalFX/MTLFXSpatialScaler.hpp"
 #include "MetalFX/MTLFXTemporalScaler.hpp"
 
 namespace Rendering::Metal
@@ -266,9 +267,12 @@ namespace Rendering::Metal
             }
         }
 
+        NS::SharedPtr<MTL::Texture> _nonMSAATexture;
         NS::SharedPtr<MTL::Texture> _msaaTexture;
+        NS::SharedPtr<MTL::Texture> _msaaDepthTexture;
         NS::SharedPtr<MTL::Texture> _depthTexture;
         NS::SharedPtr<MTLFX::TemporalScaler> _temporalScaler;
+        NS::SharedPtr<MTLFX::SpatialScaler> _spatialScaler;
     };
 }
 
