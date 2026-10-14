@@ -24,7 +24,7 @@ namespace Rendering::Metal
             );
 
         // override
-        [[nodiscard]] void* raw() const override { return _metalPSO.get(); }
+        [[nodiscard]] void* raw() const override { return usingMSAA? _msaaMetalPSO.get() : _metalPSO.get(); }
 
         // observer functions
         [[nodiscard]] MTL::Function* getVertexFunction() const { return _vertexF.get(); }
@@ -32,9 +32,9 @@ namespace Rendering::Metal
 
         std::map<Core::SamplerDescriptor, NS::SharedPtr<MTL::SamplerState>> samplers;
 
-
     private:
         NS::SharedPtr<MTL::RenderPipelineState> _metalPSO;
+        NS::SharedPtr<MTL::RenderPipelineState> _msaaMetalPSO;
         NS::SharedPtr<MTL::Function> _vertexF;
         NS::SharedPtr<MTL::Function> _fragmentF;
     };

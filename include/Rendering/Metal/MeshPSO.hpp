@@ -25,7 +25,7 @@ namespace Rendering::Metal
         );
 
         // override
-        [[nodiscard]] void* raw() const override { return _metalPSO.get(); }
+        [[nodiscard]] void* raw() const override { return usingMSAA? _msaaMetalPSO.get() : _metalPSO.get(); }
 
         // observer functions
         [[nodiscard]] MTL::Function* getObjectFunction() const { return _objectF.get(); }
@@ -36,6 +36,7 @@ namespace Rendering::Metal
 
     private:
         NS::SharedPtr<MTL::RenderPipelineState> _metalPSO;
+        NS::SharedPtr<MTL::RenderPipelineState> _msaaMetalPSO;
         NS::SharedPtr<MTL::Function> _objectF;
         NS::SharedPtr<MTL::Function> _meshF;
         NS::SharedPtr<MTL::Function> _fragmentF;

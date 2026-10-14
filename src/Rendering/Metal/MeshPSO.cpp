@@ -72,7 +72,14 @@ namespace Rendering::Metal
         switch (config.colorPixelFormat)
         {
         case BGRAUnorm:
-            meshPSODescriptor->colorAttachments()->object(0)->setPixelFormat(MTL::PixelFormatBGRA8Unorm);
+            if (config.name == "UI" || config.name == "TextureUI")
+            {
+                meshPSODescriptor->colorAttachments()->object(0)->setPixelFormat(MTL::PixelFormatBGRA8Unorm);
+            }
+            else
+            {
+                meshPSODescriptor->colorAttachments()->object(0)->setPixelFormat(MTL::PixelFormatRGBA16Float);
+            }
             break;
         case ColorInvalid:
             meshPSODescriptor->colorAttachments()->object(0)->setPixelFormat(MTL::PixelFormat::PixelFormatInvalid);
@@ -113,6 +120,9 @@ namespace Rendering::Metal
         // Create pipeline state
         NS::Error* error = nullptr;
         _metalPSO = NS::TransferPtr(device->newRenderPipelineState(meshPSODescriptor.get(), MTL::PipelineOptionNone, nullptr, &error));
+
+        meshPSODescriptor->setRasterSampleCount(4);
+        _msaaMetalPSO = NS::TransferPtr(device->newRenderPipelineState(meshPSODescriptor.get(), MTL::PipelineOptionNone, nullptr, &error));
 
         if (!_metalPSO)
         {
