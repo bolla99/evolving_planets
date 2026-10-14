@@ -137,11 +137,9 @@ struct FragmentOut {
 
 fragment FragmentOut fragmentVCWARDFULLSHADOW(
         VertexOut in [[stage_in]],
-        constant float& alpha [[buffer(22)]],
+        constant WardMaterial& mat [[buffer(22)]],
         constant ShadowData& shadowData [[buffer(23)]],
         constant PointShadowData& pointShadowData [[buffer(24)]],
-        constant float& roughness [[buffer(25)]],
-        constant float& metallic [[buffer(26)]],
         constant float4& cameraPosition [[buffer(27)]],
         constant Lights& lights [[buffer(28)]],
         depth2d_array<float> shadowMaps [[texture(0)]],
@@ -150,33 +148,33 @@ fragment FragmentOut fragmentVCWARDFULLSHADOW(
 ) {
     
     float3 finalAlbedo = in.color.xyz;
-    float finalRoughness = roughness;
-    float finalMetallic = metallic;
     
     auto c = applyFULLSHADOWWARDLightsWithOrenNayar(
                                 {float4(finalAlbedo, 1.0), in.normal, in.worldPosition},
-                                 finalRoughness, finalMetallic,
-                                 cameraPosition, lights, float3(1.0),
+                                 mat.roughness, mat.metallic,
+                                 cameraPosition, lights,
                                  shadowData,
                                  pointShadowData,
                                  shadowMaps,
                                  cubeMaps,
-                                 textureSampler, nullptr, nullptr, 0, 0.0f, 0.001f, false
+                                 textureSampler,
+                                 mat.shadowWorldBias,
+                                 mat.directionalShadowBias,
+                                 mat.pointShadowBias,
+                                 mat.useShadowPCF
                                  );
             
     // DITHERING
     float dist = distance(in.instanceWorldPosition, cameraPosition.xyz);
-    auto fadeNearDistance = 3.0f;
-    auto fadeFarDistance = 10.0f;
-    float a = smoothstep(fadeNearDistance, fadeFarDistance, dist);
+    float a = smoothstep(mat.ditheringNearDistance, mat.ditheringFarDistance, dist);
 
     float threshold = interleavedGradientNoise(in.position.xy);
     if (a < threshold) {
         discard_fragment();
     }
-    
     FragmentOut out;
-    out.color = float4(c.rgb, c.a * alpha);
+    
+    out.color = float4(c.rgb, c.a * mat.alpha);
     out.motionVector = motionVector(in.currentClipPosition, in.previousClipPosition);
     return out;
 }

@@ -68,7 +68,8 @@ enum MaterialType
     THURST,
     HEAT,
     PREVIOUS_MODEL_MATRIX,
-    ATMOSPHERE_SETTINGS
+    ATMOSPHERE_SETTINGS,
+    WARD_MATERIAL
 };
 
 enum MaterialStage
@@ -83,11 +84,13 @@ struct AtmosphereSettings
 {
     int SAMPLES = 16;
     int _padding[3];
-    int SUN_SAMPLES = 8;
+    int SUN_SAMPLES = 16;
     int _padding2[3];
     bool jitter = true;
     int _padding3[3];
-    bool useBakedLightTransmittance = false;
+    glm::vec2 jitterMultipliers = glm::vec2(10000, 1);
+    int _padding4[2];
+    bool useBakedLightTransmittance = true;
 };
 
 
@@ -211,18 +214,43 @@ struct PlanetInfoMaterial {
     int rockyResolution = 0;
 };
 
+struct WardMaterial {
+    float metallic = 0.0f;
+    float roughness = 0.6f;
+    float alpha = 1.0f;
+    float directionalShadowBias = 0.001f;
+    float pointShadowBias = 0.001f;
+    float shadowWorldBias = 0.0f;
+    int useShadowPCF = 1;
+    float ditheringNearDistance = 2.0;
+    float ditheringFarDistance = 6.0f;
+};
+
 struct CompactPlanetInfoMaterial {
     float planetRadius = 0.0f;
     float fractalIntensity = 20.0f;
     float fractalScale = 0.01f;
     int useConstantLOD = 0;
     int constantLOD = 0;
-    int octaves = 14;
+    int octaves = 12;
     float deltaMultiplier = 5.0f;
     float minDelta = 0.000003f;
-    float maxDelta = 0.00001f;
+    float maxDelta = 0.0005f;
     int useRayTracingShadows = 0;
     int useSkirts = 1;
+    int minLOD = 0;
+    int maxLOD = 8;
+    float lodExponent = 1.0f;
+    float lodMultiplier = 32.0f;
+    float frustumOcclusionMargin = 0.2f;
+    float occlusionViewNormalDotThreshold = 0.3f;
+    float biasedWorldPositionOffset = 0.2f;
+    float directionalShadowBias = 0.001f;
+    float pointShadowBias = 0.0001f;
+    int useShadowPCF = 1;
+    int useOrenNayar = 1;
+    int useObjectShaderVisibilityCulling = 1;
+    int useMeshShaderVisibilityCulling = 1;
 };
 
 template <typename T>
@@ -276,7 +304,7 @@ constexpr std::vector<std::byte> getDefaultBytes(MaterialType type)
     case LIGHTS:
         return getBytes(Lights());
     case ROUGHNESS:
-        return getBytes(0.7f);
+        return getBytes(1.0f);
     case METALLIC:
         return getBytes(0.0f);
     case SHADOW_DATA:
@@ -349,6 +377,8 @@ constexpr std::vector<std::byte> getDefaultBytes(MaterialType type)
         return getBytes(glm::mat4(1.0f));
     case ATMOSPHERE_SETTINGS:
         return getBytes(AtmosphereSettings{});
+    case WARD_MATERIAL:
+        return getBytes(WardMaterial{});
     }
     throw std::runtime_error("Invalid material type");
 }

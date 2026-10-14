@@ -91,20 +91,6 @@ fragment FragmentOut fragmentFlame(
     float3 coloreCore = float3(2.0f, 2.0f, 2.0f);
     float3 coloreFiamma = float3(0.0f, 0.8f, 2.0f);
     float4 finalColor = float4(mix(coloreFiamma, coloreCore, pow(fireDensity, 2.0f)), fireDensity);
-
-    /*
-    auto finalColor = applyFULLSHADOWWARDLightsWithOrenNayar(
-                                {in.color, in.normal, in.worldPosition},
-                                 roughness, metallic,
-                                 cameraPosition, lights, float3(1.0),
-                                 shadowData,
-                                 pointShadowData,
-                                 shadowMaps,
-                                 cubeMaps,
-                                 textureSampler, nullptr, nullptr, 0, 0.0f, 0.01f, false
-                                 );
-     */
-            
     
     
     // DITHERING

@@ -15,6 +15,18 @@ using namespace metal;
 #define MAX_POINT_LIGHTS 16
 #define MAX_DIRECTIONAL_LIGHTS 4
 
+struct WardMaterial {
+    float metallic;
+    float roughness;
+    float alpha;
+    float directionalShadowBias;
+    float pointShadowBias;
+    float shadowWorldBias;
+    int useShadowPCF;
+    float ditheringNearDistance;
+    float ditheringFarDistance;
+};
+
 struct VertexPCNUV {
     float3 position [[attribute(0)]];
     float4 color [[attribute(1)]];
@@ -500,26 +512,28 @@ struct FragmentData {
     float4 worldPosition;
 };
 
+
 inline float4 applyFULLSHADOWWARDLightsWithOrenNayar(
                         FragmentData fg,
                         float roughness,
                         float metallic,
                         constant float4& cameraPosition,
                         constant Lights& lights,
-                        float3 sunMultiplier,
                         constant ShadowData& shadowData,
                         constant PointShadowData& pointShadowData,
                         depth2d_array<float> shadowMaps,
                         depthcube_array<float> cubeMaps,
                         sampler textureSampler,
-                        constant BVHNode* bvhNodes,
-                        constant Triangle* bvhPrimitives,
-                        int useRayTracedShadow,
                         float biasedWorldPosOffset,
-                        float shadowBias,
-                        bool shadowFrontCulling = false
+                        float directionalShadowBias,
+                        float pointShadowBias,
+                        bool useShadowPCF = true,
+                        float3 sunMultiplier = float3(1.0f),
+                        bool useOrenNayar = false,
+                        int useRayTracedShadow = 0,
+                        constant BVHNode* bvhNodes = nullptr,
+                        constant Triangle* bvhPrimitives = nullptr
                    ) {
-    if (shadowFrontCulling) shadowBias = -shadowBias;
     
     auto color = fg.color;
     auto worldPosition = fg.worldPosition;
@@ -543,9 +557,6 @@ inline float4 applyFULLSHADOWWARDLightsWithOrenNayar(
     float3 V = normalize(cameraPosition - worldPosition).xyz;
     float3 N = normalize(normal.xyz);
     float dotNV = dot(N, V);
-
-
-    bool usePCF = true;
     
     // DIRECTIONAL
     float3 C = lights.directionalLights[0].color.rgb;
@@ -574,7 +585,7 @@ inline float4 applyFULLSHADOWWARDLightsWithOrenNayar(
                     shadowUV.y > 0.0 and shadowUV.y < 1.0 and
                     currentDepth > 0.0 and currentDepth < 1.0) {
                     
-                    if (usePCF) {
+                    if (useShadowPCF) {
                         float shadowAccum = 0.0;
                         
                         // Calcola la dimensione di un singolo texel nella shadow map
@@ -586,7 +597,7 @@ inline float4 applyFULLSHADOWWARDLightsWithOrenNayar(
                             for(int y = -1; y <= 1; ++y) {
                                 float2 offset = float2(x, y) * texelSize;
                                 float pcfDepth = shadowMaps.sample(textureSampler, shadowUV + offset, i);
-                                shadowAccum += (currentDepth > pcfDepth + shadowBias) ? 0.0 : 1.0;
+                                shadowAccum += (currentDepth > pcfDepth + directionalShadowBias) ? 0.0 : 1.0;
                             }
                         }
                         
@@ -595,7 +606,7 @@ inline float4 applyFULLSHADOWWARDLightsWithOrenNayar(
                     } else {
                         
                         float shadowMapDepth = shadowMaps.sample(textureSampler, shadowUV, i);
-                        if (currentDepth > shadowMapDepth + shadowBias) {
+                        if (currentDepth > shadowMapDepth + directionalShadowBias) {
                             shadowFactor = 0.0f;
                         }
                     }
@@ -605,18 +616,25 @@ inline float4 applyFULLSHADOWWARDLightsWithOrenNayar(
         }
             
         // DIFFUSE
-        color.rgb += (rho_d / 3.14f) * C * dotNL * shadowFactor;
+        if (useOrenNayar) {
+            float3 orenNayarDiffuse = calculateOrenNayarDiffuse(N, L, V, roughness, rho_d);
+            color.rgb += C * orenNayarDiffuse * shadowFactor;
+        } else {
+            color.rgb += (rho_d / 3.14f) * C * dotNL * shadowFactor;
+        }
             
         if (dotNV > 0.0) { // skip specular if dotnv < 0
             
             // SPECULAR
+            float safeValue = 1e-6f;
             float3 H = normalize(L + V); // half vector
             float dotNH = dot(H, N);
             float dotNH2 = dotNH * dotNH;
-            float tan2ThetaH = (1.0 - dotNH2) / dotNH2;
+            float tan2ThetaH = (1.0 - dotNH2) / max(safeValue, dotNH2);
             
             float exponent = -tan2ThetaH / alpha2;
-            float D = exp(exponent) / (4.0f * 3.1415 * alpha2 * sqrt(dotNL * dotNV));
+            float safeD = max(safeValue, (4.0f * 3.1415 * alpha2 * sqrt(dotNL * dotNV)));
+            float D = exp(exponent) / safeD;
             
             color.rgb += C * D * rho_s * dotNL * shadowFactor;
         }
@@ -654,11 +672,10 @@ inline float4 applyFULLSHADOWWARDLightsWithOrenNayar(
             
             // Usa il bias che abbiamo trovato (0.005)
             if (farDistance <= 1.0f) {
-                shadowAccum += (farDistance > pcfDepth + shadowBias) ? 0.0 : 1.0;
+                shadowAccum += (farDistance > pcfDepth + pointShadowBias) ? 0.0 : 1.0;
             } else {
                 shadowAccum += 1.0;
             }
-        
         }
 
         // 3. Media dei risultati
@@ -677,14 +694,15 @@ inline float4 applyFULLSHADOWWARDLightsWithOrenNayar(
         if (dotNV <= 0) continue;
         
         // SPECULAR
+        float safeValue = 1e-6f;
         float3 H = normalize(L + V); // Vettore somma (non normalizzato nella tua formula)
         float dotNH = dot(H, N);
         float dotNH2 = dotNH * dotNH;
-        float tan2ThetaH = (1.0 - dotNH2) / dotNH2;
+        float tan2ThetaH = (1.0 - dotNH2) / max(safeValue, dotNH2);
 
         // Esempio semplificato della struttura della formula
         float exponent = -tan2ThetaH / alpha2;
-        float D = exp(exponent) / (4.0f * 3.1415 * alpha2 * sqrt(dotNL * dotNV));
+        float D = exp(exponent) / max(safeValue, (4.0f * 3.1415 * alpha2 * sqrt(dotNL * dotNV)));
 
         //if (dotNL <= 0) continue;
         color.rgb += CD * D * rho_s * dotNL * shadowFactor;

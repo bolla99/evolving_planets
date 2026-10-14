@@ -67,6 +67,6 @@ fragment FragmentOut fragmentPointShadow(
                                    constant PointShadowData& shadowData [[buffer(30)]]
                                    ) {
     FragmentOut fOut;
-    fOut.depth = distance(out.worldPosition, shadowData.positions[out.lightIndex]) / shadowData.farPlanes[out.lightIndex].x;
+    fOut.depth = distance(out.worldPosition.xyz, shadowData.positions[out.lightIndex].xyz) / shadowData.farPlanes[out.lightIndex].x;
     return fOut;
 }
