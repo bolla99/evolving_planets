@@ -35,6 +35,7 @@ namespace Rendering
                         {VIEW_PROJECTION_MATRIX, Vertex, 28},
                         {PREVIOUS_VIEW_PROJECTION_MATRIX, Vertex, 29},
                         {JITTERED_VIEW_PROJECTION_MATRIX, Vertex, 30},
+                    {CAMERA_POSITION, Fragment, 10}
                 }, {}, {}, {}
             }
         },
@@ -167,9 +168,7 @@ namespace Rendering
                 G_getVertexDescriptors().at("PCNUV"),
                 {
                             {PREVIOUS_MODEL_MATRIX, Vertex, 25},
-                            {WARD_ALPHA, Fragment, 22},
-                            {ROUGHNESS, Fragment, 25},
-                            {METALLIC, Fragment, 26},
+                            {WARD_MATERIAL, Fragment, 22},
                             {NORMAL_MATRIX, Vertex, 26},
                             {MODEL_MATRIX, Vertex, 27},
                             },
@@ -494,13 +493,15 @@ namespace Rendering
                                         {SUN_COLOR, Fragment, 18},
                                         {SHADOW_DATA, Fragment, 19},
                                         {LIGHTS, Fragment, 20},
-                                    {ATMOSPHERE_SETTINGS, Fragment, 21}
+                                        {ATMOSPHERE_SETTINGS, Fragment, 21},
+                    {TIME, Fragment, 22}
                 }, {}, {
                     {Core::AtmosphereDensity3D, Fragment, 0},
                     {Core::LightTransmittance3D, Fragment, 1},
                     {Core::ShadowMap, Fragment, 2},
                 }, {
-                    {Core::ClampToEdge, Core::ClampToEdge, Core::ClampToEdge, Core::Linear, Core::Linear, true, Fragment, 0},
+                    {Core::ClampToZero, Core::ClampToZero, Core::ClampToZero, Core::Linear, Core::Linear, true, Fragment, 0},
+                    {Core::ClampToEdge, Core::ClampToEdge, Core::None, Core::Linear, Core::Linear, true, Fragment, 1},
                 }
             }
         },
@@ -786,11 +787,11 @@ namespace Rendering
                     {Core::CubeShadowMap, Fragment, 1},
                     {Core::AtmosphereDensity3D, Fragment, 4},
                     {Core::LightTransmittance3D, Fragment, 5}
-
                 },
                 {
                     {Core::Repeat, Core::ClampToEdge, Core::None, Core::Linear, Core::Linear, true, Fragment, 0},
                     {Core::ClampToEdge, Core::ClampToEdge, Core::ClampToEdge, Core::Linear, Core::Linear, true, Fragment, 1},
+                    {Core::ClampToEdge, Core::ClampToEdge, Core::None, Core::Linear, Core::Linear, true, Fragment, 2},
                     {Core::Repeat, Core::ClampToEdge, Core::None, Core::Linear, Core::Linear, true, Object, 0},
                     {Core::Repeat, Core::ClampToEdge, Core::None, Core::Linear, Core::Linear, true, Mesh, 0}
                 }
@@ -940,9 +941,7 @@ namespace Rendering
                 G_getVertexDescriptors().at("PCNUV"),
                 {
                                 {PREVIOUS_MODEL_MATRIX, Vertex, 25},
-                                {WARD_ALPHA, Fragment, 22},
-                                {ROUGHNESS, Fragment, 25},
-                                {METALLIC, Fragment, 26},
+                                {WARD_MATERIAL, Fragment, 22},
                                 {NORMAL_MATRIX, Vertex, 26},
                                 {MODEL_MATRIX, Vertex, 27},
                                 },
@@ -997,7 +996,8 @@ namespace Rendering
                         {PREVIOUS_VIEW_PROJECTION_MATRIX, Vertex, 29},
                         {JITTERED_VIEW_PROJECTION_MATRIX, Vertex, 30},
                         {HEAT, Fragment, 10},
-                        {TIME, Fragment, 11}
+                        {TIME, Fragment, 11},
+                    {CAMERA_POSITION, Fragment, 12},
                 }, {}, {}, {}
             }
         },
@@ -1008,6 +1008,190 @@ namespace Rendering
                 "Sharpening",
                 PipelineType::Compute,
                 "sharpening_pass",
+                "", "",
+                Triangle,
+                Solid,
+                None,
+                Enabled,
+                Default,
+                ColorPixelFormat::BGRAUnorm,
+                DepthPixelFormat::Depth32Float,
+                G_getVertexDescriptors().at("P"),
+                {},
+                {},
+                {},
+                {},
+                {}
+            }
+        },
+        std::pair<std::string, const PSOConfig>{
+            std::string("BloomThreshold"),
+            PSOConfig
+            {
+                "BloomThreshold",
+                PipelineType::Compute,
+                "bloom_threshold",
+                "", "",
+                Triangle,
+                Solid,
+                None,
+                Enabled,
+                Default,
+                ColorPixelFormat::BGRAUnorm,
+                DepthPixelFormat::Depth32Float,
+                G_getVertexDescriptors().at("P"),
+                {},
+                {},
+                {},
+                {},
+                {}
+            }
+        },
+        std::pair<std::string, const PSOConfig>{
+            std::string("BloomBlurH"),
+            PSOConfig
+            {
+                "BloomBlurH",
+                PipelineType::Compute,
+                "bloom_blur_h",
+                "", "",
+                Triangle,
+                Solid,
+                None,
+                Enabled,
+                Default,
+                ColorPixelFormat::BGRAUnorm,
+                DepthPixelFormat::Depth32Float,
+                G_getVertexDescriptors().at("P"),
+                {},
+                {},
+                {},
+                {},
+                {}
+            }
+        },
+        std::pair<std::string, const PSOConfig>{
+            std::string("BloomBlurV"),
+            PSOConfig
+            {
+                "BloomBlurV",
+                PipelineType::Compute,
+                "bloom_blur_v",
+                "", "",
+                Triangle,
+                Solid,
+                None,
+                Enabled,
+                Default,
+                ColorPixelFormat::BGRAUnorm,
+                DepthPixelFormat::Depth32Float,
+                G_getVertexDescriptors().at("P"),
+                {},
+                {},
+                {},
+                {},
+                {}
+            }
+        },
+        std::pair<std::string, const PSOConfig>{
+            std::string("BloomCombine"),
+            PSOConfig
+            {
+                "BloomCombine",
+                PipelineType::Compute,
+                "bloom_combine",
+                "", "",
+                Triangle,
+                Solid,
+                None,
+                Enabled,
+                Default,
+                ColorPixelFormat::BGRAUnorm,
+                DepthPixelFormat::Depth32Float,
+                G_getVertexDescriptors().at("P"),
+                {},
+                {},
+                {},
+                {},
+                {}
+            }
+        },
+        std::pair<std::string, const PSOConfig>{
+            std::string("Tonemapping"),
+            PSOConfig
+            {
+                "Tonemapping",
+                PipelineType::Compute,
+                "tonemapping_pass",
+                "", "",
+                Triangle,
+                Solid,
+                None,
+                Enabled,
+                Default,
+                ColorPixelFormat::BGRAUnorm,
+                DepthPixelFormat::Depth32Float,
+                G_getVertexDescriptors().at("P"),
+                {},
+                {},
+                {},
+                {},
+                {}
+            }
+        },
+        std::pair<std::string, const PSOConfig>{
+            std::string("SMAAEdgeDetection"),
+            PSOConfig
+            {
+                "SMAAEdgeDetection",
+                PipelineType::Compute,
+                "smaa_edge_detection",
+                "", "",
+                Triangle,
+                Solid,
+                None,
+                Enabled,
+                Default,
+                ColorPixelFormat::BGRAUnorm,
+                DepthPixelFormat::Depth32Float,
+                G_getVertexDescriptors().at("P"),
+                {},
+                {},
+                {},
+                {},
+                {}
+            }
+        },
+        std::pair<std::string, const PSOConfig>{
+            std::string("SMAABlendWeight"),
+            PSOConfig
+            {
+                "SMAABlendWeight",
+                PipelineType::Compute,
+                "smaa_blend_weight",
+                "", "",
+                Triangle,
+                Solid,
+                None,
+                Enabled,
+                Default,
+                ColorPixelFormat::BGRAUnorm,
+                DepthPixelFormat::Depth32Float,
+                G_getVertexDescriptors().at("P"),
+                {},
+                {},
+                {},
+                {},
+                {}
+            }
+        },
+        std::pair<std::string, const PSOConfig>{
+            std::string("SMAANeighborhoodBlending"),
+            PSOConfig
+            {
+                "SMAANeighborhoodBlending",
+                PipelineType::Compute,
+                "smaa_neighborhood_blending",
                 "", "",
                 Triangle,
                 Solid,
