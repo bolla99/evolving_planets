@@ -33,6 +33,19 @@ struct CompactPlanetInfo {
     float maxDelta;
     int useRayTracingShadows;
     int useSkirts;
+    int minLOD;
+    int maxLOD;
+    float lodExponent;
+    float lodMultiplier;
+    float frustumOcclusionMargin;
+    float occlusionViewNormalDotThreshold;
+    float biasedWorldPositionOffset;
+    float directionalShadowBias;
+    float pointShadowBias;
+    int useShadowPCF;
+    int useOrenNayar;
+    int useObjectShaderVisibilityCulling;
+    int useMeshShaderVisibilityCulling;
 };
 
 
@@ -50,7 +63,7 @@ uint calculateLOD(float3 v0, float3 v1, float3 v2, float4x4 modelMatrix, float3 
                   CompactPlanetInfo info,
                   texture2d<float> planetTex,
                   texture2d<float> normalTex,
-                  sampler planetSampler, int octaves) {
+                  sampler planetSampler, int octaves, int minLOD, int maxLOD, float lodExponent, float lodMultiplier) {
     v0 = normalize(v0);
     v1 = normalize(v1);
     v2 = normalize(v2);
@@ -78,24 +91,22 @@ uint calculateLOD(float3 v0, float3 v1, float3 v2, float4x4 modelMatrix, float3 
     // screenRef è 1.0 / tan(fov/2), derivato dalla matrice di proiezione standard.
     float screenRef = projectionMatrix[1][1];
     float projectedSize = (info.planetRadius / 10.0 * screenRef) / dist;
-
-    float maxLOD = 7.0;
     
     // 7. Mappatura con Curvatura
     // Portiamo il valore in un range normalizzato 0.0 - 1.0 basato sul range desiderato (0-9)
-    float baseLod = log2(projectedSize * 32.0);
+    float baseLod = log2(projectedSize * lodMultiplier);
     float normalizedLod = clamp(baseLod / maxLOD, 0.0, 1.0);
 
     // Applichiamo una curva di potenza:
     // 1.0 = lineare (come ora)
     // 2.0 = parabola (molto lento all'inizio, esplode alla fine)
     // 1.5 = una via di mezzo corretta
-    float curvedLod = pow(normalizedLod, 1.5);
+    float curvedLod = pow(normalizedLod, lodExponent);
 
     // Riportiamo nel range 0-9
     float lodWeight = curvedLod * maxLOD;
     
-    return uint(clamp(lodWeight, 2.0, maxLOD));
+    return uint(clamp(lodWeight, float(minLOD), float(maxLOD)));
 }
 
 constant float occlusionMargin = 0.5f;
@@ -186,55 +197,56 @@ void planet_object_shader(
         sv[i] = normalize(v0 * corners_b[i].x + v1 * corners_b[i].y + v2 * corners_b[i].z);
     }
 
-    // --- VISIBILITY CULLING ---
-    float3 p[4];
-    for (int i = 0; i < 3; ++i) {
-        p[i] = get_full_displaced_pos(sv[i], planetInfo, planetTex, normalTex, planetSampler, 2);
-    }
-    float3 vCenter = normalize(sv[0] + sv[1] + sv[2]);
-    p[3] = get_full_displaced_pos(vCenter, planetInfo, planetTex, normalTex, planetSampler, 2);
-
-    float3 w[4];
-    for (int i = 0; i < 4; ++i) {
-        w[i] = (modelMatrix * float4(p[i], 1.0)).xyz;
-    }
-    
-    float3 faceNormal = normalize(cross(w[1] - w[0], w[2] - w[0]));
-    float3 viewDir = normalize(w[3] - cameraPosition.xyz);
-
-    if (dot(faceNormal, viewDir) > 0.2) return;
-
-    float4 clipPos[4];
-    float4x4 vp = projectionMatrix * viewMatrix;
-    bool allOutside[6] = {true, true, true, true, true, true};
-    float margin = occlusionMargin;
-
-    for (int i = 0; i < 4; ++i) {
-        clipPos[i] = vp * modelMatrix * float4(p[i], 1.0);
-        float w_margin = clipPos[i].w * (1.0 + margin);
-        if (clipPos[i].x >= -w_margin) allOutside[0] = false;
-        if (clipPos[i].x <=  w_margin) allOutside[1] = false;
-        if (clipPos[i].y >= -w_margin) allOutside[2] = false;
-        if (clipPos[i].y <=  w_margin) allOutside[3] = false;
-        if (clipPos[i].z >= -w_margin) allOutside[4] = false;
-        if (clipPos[i].z <=  w_margin) allOutside[5] = false;
-    }
-    
-    bool isVisible = true;
-    for (int j = 0; j < 6; ++j) {
-        if (allOutside[j]) {
-            isVisible = false;
-            break;
+    if (planetInfo.useObjectShaderVisibilityCulling) {
+        float3 p[4];
+        for (int i = 0; i < 3; ++i) {
+            p[i] = get_full_displaced_pos(sv[i], planetInfo, planetTex, normalTex, planetSampler, 2);
         }
+        float3 vCenter = normalize(sv[0] + sv[1] + sv[2]);
+        p[3] = get_full_displaced_pos(vCenter, planetInfo, planetTex, normalTex, planetSampler, 2);
+        
+        float3 w[4];
+        for (int i = 0; i < 4; ++i) {
+            w[i] = (modelMatrix * float4(p[i], 1.0)).xyz;
+        }
+        
+        float3 faceNormal = normalize(cross(w[1] - w[0], w[2] - w[0]));
+        float3 viewDir = normalize(w[3] - cameraPosition.xyz);
+        
+        if (dot(faceNormal, viewDir) > planetInfo.occlusionViewNormalDotThreshold) return;
+        
+        float4 clipPos[4];
+        float4x4 vp = projectionMatrix * viewMatrix;
+        bool allOutside[6] = {true, true, true, true, true, true};
+        float margin = planetInfo.frustumOcclusionMargin;
+        
+        for (int i = 0; i < 4; ++i) {
+            clipPos[i] = vp * modelMatrix * float4(p[i], 1.0);
+            float w_margin = clipPos[i].w * (1.0 + margin);
+            if (clipPos[i].x >= -w_margin) allOutside[0] = false;
+            if (clipPos[i].x <=  w_margin) allOutside[1] = false;
+            if (clipPos[i].y >= -w_margin) allOutside[2] = false;
+            if (clipPos[i].y <=  w_margin) allOutside[3] = false;
+            if (clipPos[i].z >= -w_margin) allOutside[4] = false;
+            if (clipPos[i].z <=  w_margin) allOutside[5] = false;
+        }
+        
+        bool isVisible = true;
+        for (int j = 0; j < 6; ++j) {
+            if (allOutside[j]) {
+                isVisible = false;
+                break;
+            }
+        }
+        if (!isVisible) return;
     }
-    if (!isVisible) return;
 
     // determine LOD
     uint subd = 0;
     if (planetInfo.useConstantLOD > 0) {
         subd = planetInfo.constantLOD;
     } else {
-        subd = calculateLOD(sv[0], sv[1], sv[2], modelMatrix, cameraPosition.xyz, projectionMatrix, planetInfo, planetTex, normalTex, planetSampler, 1);
+        subd = calculateLOD(sv[0], sv[1], sv[2], modelMatrix, cameraPosition.xyz, projectionMatrix, planetInfo, planetTex, normalTex, planetSampler, 1, planetInfo.minLOD, planetInfo.maxLOD, planetInfo.lodExponent, planetInfo.lodMultiplier);
     }
     
     uint numMeshlets = 1;
@@ -516,58 +528,60 @@ void planet_mesh_shader(
 
     // Variabile condivisa per calcolare l'orientamento corretto della gonna
     threadgroup float3 sharedMeshletCenter;
-    threadgroup bool isCulled = false;
-
-    // --- FRUSTUM CULLING ---
-    if (tid == 0) {
-        float3 corners_b[3];
-        if (!downward) {
-            corners_b[0] = float3(1.0 - (float)m_row / m - (float)(m_col / 2) / m, (float)(m_col / 2) / m, (float)m_row / m);
-            corners_b[1] = float3(1.0 - (float)m_row / m - (float)(m_col / 2 + 1) / m, (float)(m_col / 2 + 1) / m, (float)m_row / m);
-            corners_b[2] = float3(1.0 - (float)(m_row + 1) / m - (float)(m_col / 2) / m, (float)(m_col / 2) / m, (float)(m_row + 1) / m);
-        } else {
-            corners_b[0] = float3(1.0 - (float)(m_row + 1) / m - (float)(m_col / 2) / m, (float)(m_col / 2) / m, (float)(m_row + 1) / m);
-            corners_b[1] = float3(1.0 - (float)m_row / m - (float)(m_col / 2 + 1) / m, (float)(m_col / 2 + 1) / m, (float)m_row / m);
-            corners_b[2] = float3(1.0 - (float)(m_row + 1) / m - (float)(m_col / 2 + 1) / m, (float)(m_col / 2 + 1) / m, (float)(m_row + 1) / m);
-        }
-
-        // Calcoliamo il centro geometrico del meshlet per orientare la gonna verso l'esterno
-        float3 c0 = normalize(faceV0 * corners_b[0].x + faceV1 * corners_b[0].y + faceV2 * corners_b[0].z);
-        float3 c1 = normalize(faceV0 * corners_b[1].x + faceV1 * corners_b[1].y + faceV2 * corners_b[1].z);
-        float3 c2 = normalize(faceV0 * corners_b[2].x + faceV1 * corners_b[2].y + faceV2 * corners_b[2].z);
-        sharedMeshletCenter = normalize(c0 + c1 + c2);
-
-        bool allOutside[6] = {true, true, true, true, true, true};
-        float margin = occlusionMargin;
-
-        for (int i = 0; i < 3; ++i) {
-            float3 p_ico = normalize(faceV0 * corners_b[i].x + faceV1 * corners_b[i].y + faceV2 * corners_b[i].z);
-            auto p_planet = get_full_displaced_pos(p_ico, planetInfo, planetTex, normalTex, planetSampler, 2);
-            float4 clipPos = viewProjectionMatrix * modelMatrix * float4(p_planet, 1.0);
-            float w_margin = clipPos.w * (1.0 + margin);
-            if (clipPos.x >= -w_margin) allOutside[0] = false;
-            if (clipPos.x <=  w_margin) allOutside[1] = false;
-            if (clipPos.y >= -w_margin) allOutside[2] = false;
-            if (clipPos.y <=  w_margin) allOutside[3] = false;
-            if (clipPos.z >= 0)          allOutside[4] = false;
-            if (clipPos.z <=  w_margin) allOutside[5] = false;
-        }
+    
+    if (planetInfo.useMeshShaderVisibilityCulling) {
+        threadgroup bool isCulled = false;
         
-        bool isThisMeshletVisible = true;
-        for (int j = 0; j < 6; ++j) {
-            if (allOutside[j]) {
-                isThisMeshletVisible = false;
-                break;
+        // --- FRUSTUM CULLING ---
+        if (tid == 0) {
+            float3 corners_b[3];
+            if (!downward) {
+                corners_b[0] = float3(1.0 - (float)m_row / m - (float)(m_col / 2) / m, (float)(m_col / 2) / m, (float)m_row / m);
+                corners_b[1] = float3(1.0 - (float)m_row / m - (float)(m_col / 2 + 1) / m, (float)(m_col / 2 + 1) / m, (float)m_row / m);
+                corners_b[2] = float3(1.0 - (float)(m_row + 1) / m - (float)(m_col / 2) / m, (float)(m_col / 2) / m, (float)(m_row + 1) / m);
+            } else {
+                corners_b[0] = float3(1.0 - (float)(m_row + 1) / m - (float)(m_col / 2) / m, (float)(m_col / 2) / m, (float)(m_row + 1) / m);
+                corners_b[1] = float3(1.0 - (float)m_row / m - (float)(m_col / 2 + 1) / m, (float)(m_col / 2 + 1) / m, (float)m_row / m);
+                corners_b[2] = float3(1.0 - (float)(m_row + 1) / m - (float)(m_col / 2 + 1) / m, (float)(m_col / 2 + 1) / m, (float)(m_row + 1) / m);
+            }
+            
+            // Calcoliamo il centro geometrico del meshlet per orientare la gonna verso l'esterno
+            float3 c0 = normalize(faceV0 * corners_b[0].x + faceV1 * corners_b[0].y + faceV2 * corners_b[0].z);
+            float3 c1 = normalize(faceV0 * corners_b[1].x + faceV1 * corners_b[1].y + faceV2 * corners_b[1].z);
+            float3 c2 = normalize(faceV0 * corners_b[2].x + faceV1 * corners_b[2].y + faceV2 * corners_b[2].z);
+            sharedMeshletCenter = normalize(c0 + c1 + c2);
+            
+            bool allOutside[6] = {true, true, true, true, true, true};
+            float margin = planetInfo.frustumOcclusionMargin;
+            for (int i = 0; i < 3; ++i) {
+                float3 p_ico = normalize(faceV0 * corners_b[i].x + faceV1 * corners_b[i].y + faceV2 * corners_b[i].z);
+                auto p_planet = get_full_displaced_pos(p_ico, planetInfo, planetTex, normalTex, planetSampler, 2);
+                float4 clipPos = viewProjectionMatrix * modelMatrix * float4(p_planet, 1.0);
+                float w_margin = clipPos.w * (1.0 + margin);
+                if (clipPos.x >= -w_margin) allOutside[0] = false;
+                if (clipPos.x <=  w_margin) allOutside[1] = false;
+                if (clipPos.y >= -w_margin) allOutside[2] = false;
+                if (clipPos.y <=  w_margin) allOutside[3] = false;
+                if (clipPos.z >= 0)          allOutside[4] = false;
+                if (clipPos.z <=  w_margin) allOutside[5] = false;
+            }
+            
+            bool isThisMeshletVisible = true;
+            for (int j = 0; j < 6; ++j) {
+                if (allOutside[j]) {
+                    isThisMeshletVisible = false;
+                    break;
+                }
+            }
+            isCulled = !isThisMeshletVisible;
+            if (isCulled) {
+                output.set_primitive_count(0);
             }
         }
-        isCulled = !isThisMeshletVisible;
-        if (isCulled) {
-            output.set_primitive_count(0);
-        }
+        
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        if (isCulled) return;
     }
-    
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    if (isCulled) return;
     
     uint numVertices = (n_tile + 1) * (n_tile + 2) / 2;
     uint numThreads = 64;
@@ -809,7 +823,8 @@ FragmentOut planet_fragment_shader(
     depth2d_array<float> shadowMaps [[texture(0)]],
     depthcube_array<float> cubeMaps [[texture(1)]],
     sampler planetSampler [[sampler(0)]],
-    sampler densitySampler [[sampler(1)]]
+    sampler densitySampler [[sampler(1)]],
+    sampler shadowSampler [[sampler(2)]]
 ) {
     auto geometricN = -normalize(cross(dfdx(in.worldPosition.xyz), dfdy(in.worldPosition.xyz)));
     auto eye = (in.worldPosition - cameraPosition).xyz;
@@ -886,16 +901,16 @@ FragmentOut planet_fragment_shader(
 
     // Fissato a 0.5f come da tua richiesta per eliminare il rumore temporale a terra
     //auto jitter = interleavedGradientNoise(in.position.xy);
-    auto jitter = smoothNoise(worldPos.xyz * 1000.0);
+    auto jitter = smoothNoise(worldPos.xyz * atmosphereSettings.jitterMultipliers.x);
     if (not atmosphereSettings.jitter) jitter = 0.5f;
 
     float3 accumulatedScattering = float3(0.0f);
     float3 transmittanceCamera = float3(1.0f);
     float3 T_sun_to_surface = float3(1.0f);
-
+    const int SAMPLES = atmosphereSettings.SAMPLES;
+    const int SUN_SAMPLES = atmosphereSettings.SUN_SAMPLES;
+    
     if (t_start < t_end) {
-        const int SAMPLES = atmosphereSettings.SAMPLES;
-        const int SUN_SAMPLES = atmosphereSettings.SUN_SAMPLES;
         float stepLength = (t_end - t_start) / float(SAMPLES);
             
         float mu = dot(rayDir, L);
@@ -909,7 +924,8 @@ FragmentOut planet_fragment_shader(
                     
             float density = 0.0f;
             if (all(uvw >= 0.0f) && all(uvw <= 1.0f)) {
-                density = sampleDensitySmooth3D(densityTexture, densitySampler, uvw);
+                //density = smoothSample(densityTexture, densitySampler, uvw);
+                density = densityTexture.sample(densitySampler, uvw).x;
             }
 
             float3 stepOpticalDepth = betaR * density * stepLength;
@@ -917,8 +933,7 @@ FragmentOut planet_fragment_shader(
             float3 T_sun;
             if (not atmosphereSettings.useBakedLightTransmittance) {
                 T_sun = lightTransmittance(
-                                                  P, L, potentialSamplingInfo, betaR, densityTexture, densitySampler, jitter, shadowMaps, shadowData, lights.numDirectionalLights, baseNormal, false, 1.0f, 0.01f, false, SUN_SAMPLES
-                                                  );
+                                                  P, L, potentialSamplingInfo, betaR, densityTexture, densitySampler, 0.0f, shadowMaps, shadowData, shadowSampler, lights.numDirectionalLights, baseNormal, false, 1.0f, 0.01f, false, SUN_SAMPLES);
             } else {
                 T_sun = lightTransmittanceFromTexture(P, potentialSamplingInfo, lightTransmittanceTexture, densitySampler, betaR);
             }
@@ -926,34 +941,34 @@ FragmentOut planet_fragment_shader(
             accumulatedScattering += T_sun * transmittanceCamera * (betaR * density * stepLength) * phaseR * I_sun;
             transmittanceCamera *= exp(-stepOpticalDepth);
         }
-
-        // Calcoliamo il filtraggio solare direttamente sulla superficie
-        float3 T_sun_to_surface;
-        if (not atmosphereSettings.useBakedLightTransmittance) {
-            T_sun_to_surface = lightTransmittance(worldPos.xyz, L, potentialSamplingInfo, betaR, densityTexture, densitySampler, jitter, shadowMaps, shadowData, lights.numDirectionalLights, baseNormal, false, 1.0, 0.01f, false, SUN_SAMPLES
-                                                  );
-        } else {
-            T_sun_to_surface = lightTransmittanceFromTexture(worldPos.xyz, potentialSamplingInfo, lightTransmittanceTexture, densitySampler, betaR);
-        }
+    }
+    
+    if (not atmosphereSettings.useBakedLightTransmittance) {
+        T_sun_to_surface = lightTransmittance(worldPos.xyz, L, potentialSamplingInfo, betaR, densityTexture, densitySampler, 0.0f, shadowMaps, shadowData, shadowSampler, lights.numDirectionalLights, baseNormal, false, 3.0, 0.01f, false, SUN_SAMPLES);
+    } else {
+        T_sun_to_surface = lightTransmittanceFromTexture(worldPos.xyz, potentialSamplingInfo, lightTransmittanceTexture, densitySampler, betaR);
     }
     
     auto c = applyFULLSHADOWWARDLightsWithOrenNayar(
             {color, normalize(float4(N, 0.0)), worldPos},
-            roughness,
+            0.4f,
             metallic,
             cameraPosition,
             lights,
-            T_sun_to_surface,
             shadowData,
             pointShadowData,
             shadowMaps,
             cubeMaps,
-            planetSampler,
-            data,
-            primitives,
+            shadowSampler,
+            planetInfo.biasedWorldPositionOffset,
+            planetInfo.directionalShadowBias,
+            planetInfo.pointShadowBias,
+            planetInfo.useShadowPCF > 0,
+            T_sun_to_surface,
+            planetInfo.useOrenNayar > 0,
             planetInfo.useRayTracingShadows,
-            0.0f,
-            0.01f, false
+            data,
+            primitives
     );
         
     // --- BLENDING ATMOSFERICO FINALE ---
@@ -963,12 +978,10 @@ FragmentOut planet_fragment_shader(
     }
         
     // Dithering sicuro solo sui canali colore (evita di corrompere l'Alpha)
-    c.xyz += (jitter - 0.5f) / 255.0f;
-    
-    auto tonemapped = ACESFilm(c.xyz);
+    //c.xyz += (jitter - 0.5f) / 255.0f;
     
     FragmentOut fOut;
-    fOut.color = float4(tonemapped, 1.0);
+    fOut.color = float4(c.xyz, 1.0);
     fOut.motionVector = motionVector(in.currentClipPosition, in.previousClipPosition);
 
     return fOut;
