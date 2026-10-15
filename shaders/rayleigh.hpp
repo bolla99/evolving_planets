@@ -24,6 +24,8 @@ struct AtmosphereSettings
     int _padding2[3];
     bool jitter;
     int _padding3[3];
+    float2 jitterMultipliers;
+    int _padding4[2];
     bool useBakedLightTransmittance;
 };
 
@@ -40,12 +42,7 @@ inline bool raySphereIntersect(float3 ro, float3 rd, float3 center, float radius
     return true;
 }
 
-// 2. FILTRAGGIO TRICUBICO/SMOOTH ADATTIVO PER TEXTURE 3D
-// Questa funzione implementa il filtraggio C2-continuo a livello sub-voxel (Quilez warp).
-// Trasforma le coordinate lineari prima del campionamento hardware trilineare per emulare
-// un'interpolazione spline cubica (Smooth Super-sampling). Elimina completamente i bordi
-// netti e l'aspetto "pixelato/voxetizzato" derivante dal campionamento trilineare standard.
-inline float sampleDensitySmooth3D(texture3d<float> tex, sampler s, float3 uvw) {
+inline float smoothSample(texture3d<float> tex, sampler s, float3 uvw) {
     float3 size = float3(tex.get_width(), tex.get_height(), tex.get_depth());
     float3 texel = uvw * size - 0.5f;
     float3 f = fract(texel);
@@ -59,7 +56,7 @@ inline float sampleDensitySmooth3D(texture3d<float> tex, sampler s, float3 uvw) 
 }
 
 inline float3 lightTransmittance(
-                                 float3 P, float3 L, constant PotentialSamplingInfo& info, float3 betaR, texture3d<float> densityTexture, sampler densitySampler, float jitter, depth2d_array<float> shadowMap, constant ShadowData& shadowData, int numLights, float3 normal, bool useBiasedP, float biasAmount, float shadowBias, bool shadowFrontCulling = false, int SUN_SAMPLES = 8
+                                 float3 P, float3 L, constant PotentialSamplingInfo& info, float3 betaR, texture3d<float> densityTexture, sampler densitySampler, float jitter, depth2d_array<float> shadowMap, constant ShadowData& shadowData, sampler shadowSampler, int numLights, float3 normal, bool useBiasedP, float biasAmount, float shadowBias, bool shadowFrontCulling = false, int SUN_SAMPLES = 8
 ) {
     if (shadowFrontCulling) shadowBias = -shadowBias;
     float3 biasedP = P;
@@ -72,12 +69,11 @@ inline float3 lightTransmittance(
         auto uv = float2(clip.x * 0.5 + 0.5, -clip.y * 0.5 + 0.5);
         auto depth = clip.z;
         if (uv.x > 0 and uv.x < 1 and uv.y > 0 and uv.y < 1 and depth > 0 and depth < 1) {
-            auto bakedDepth = shadowMap.sample(densitySampler, uv, i);
+            auto bakedDepth = shadowMap.sample(shadowSampler, uv, i);
             if (depth > (bakedDepth + shadowBias)) return float3(0.0);
         }
     }
     
-    // Troviamo dove il raggio del sole esce dall'atmosfera globale
     float ts0 = 0.0;
     float ts1 = 0.0;
     
@@ -93,7 +89,8 @@ inline float3 lightTransmittance(
         auto normalizedP = (samplePoint - info.min.xyz) / info.edge;
         float density = 0.0f;
         if (all(normalizedP >= 0.0f) && all(normalizedP <= 1.0f)) {
-            density = sampleDensitySmooth3D(densityTexture, densitySampler, normalizedP);
+            //density = smoothSample(densityTexture, densitySampler, normalizedP);
+            density = densityTexture.sample(densitySampler, normalizedP).x;
         }
 
         opticalDepth += density * stepL;
@@ -109,6 +106,7 @@ inline float3 lightTransmittanceFromTexture(
                                             sampler s, float3 betaR
                                             ) {
     auto normalizedP = (P - info.min.xyz) / info.edge;
+    //auto scalarLightTransmittance = smoothSample(opticalDepthTexture, s, normalizedP);
     auto scalarLightTransmittance = opticalDepthTexture.sample(s, normalizedP).x;
     return pow(scalarLightTransmittance, betaR);
 }
