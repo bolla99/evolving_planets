@@ -21,6 +21,7 @@ struct VertexOut {
     float4 position [[position]];
     float4 currentClipPosition;
     float4 previousClipPosition;
+    float4 stableCurrentClipForMotion;
 };
 
 // materials
@@ -67,7 +68,8 @@ vertex VertexOut vertexSkybox(
 ) {
     VertexOut vOut;
     float4 currentPosition;
-    currentPosition.xy = vertexIn.position.xy * rect.size + rect.position;
+    //currentPosition.xy = vertexIn.position.xy * rect.size + rect.position;
+    currentPosition.xy = vertexIn.position.xy * viewportSize.size * TAAScaling;
     currentPosition.z = vertexIn.position.z;
     currentPosition.w = 1.0;
     auto vs = floor(viewportSize.size * TAAScaling);
@@ -79,17 +81,21 @@ vertex VertexOut vertexSkybox(
     //apply jitter
     vOut.position.xy -= jitter;
     
+    
+    
     // 1. Spazio Mondo Omogeneo (lineare, NESSUNA divisione per W)
     float4 worldPos = inverseViewProjectionMatrix * currentPosition;
-    auto currentViewMatrix = inverseProjectionMatrix * viewProjectionMatrix;
+    float3 dir = normalize(worldPos.xyz / worldPos.w - cameraPosition.xyz);
+    //auto currentViewMatrix = inverseProjectionMatrix * viewProjectionMatrix;
     auto previousViewMatrix = inverseProjectionMatrix * previousViewProjectionMatrix;
-    previousViewMatrix[3][0] = currentViewMatrix[3][0];
-    previousViewMatrix[3][1] = currentViewMatrix[3][1];
-    previousViewMatrix[3][2] = currentViewMatrix[3][2];
-    previousViewMatrix[3][3] = currentViewMatrix[3][3];
-    vOut.previousClipPosition = projectionMatrix * previousViewMatrix * worldPos;
+    //previousViewMatrix[3][0] = currentViewMatrix[3][0];
+    //previousViewMatrix[3][1] = currentViewMatrix[3][1];
+    //previousViewMatrix[3][2] = currentViewMatrix[3][2];
+    //previousViewMatrix[3][3] = currentViewMatrix[3][3];
+    //vOut.previousClipPosition = previousViewProjectionMatrix * float4(dir, 0.0f);
+    vOut.previousClipPosition = previousViewProjectionMatrix * worldPos;
+    vOut.previousClipPosition /= vOut.previousClipPosition.w;
 
-        
     return vOut;
 }
 
@@ -204,8 +210,9 @@ fragment FragmentOut fragmentSkybox(
     texture3d<float> lightTransmittanceTexture [[texture(1)]],
     depth2d_array<float> shadowMaps [[texture(2)]],
     sampler densitySampler [[sampler(0)]],
-    constant AtmosphereSettings& atmosphereSettings [[buffer(21)]]
-                    
+    sampler shadowSampler [[sampler(1)]],
+    constant AtmosphereSettings& atmosphereSettings [[buffer(21)]],
+    constant float& time [[buffer(22)]]
 ) {
     // get world position of the pixel with far z (z = 1.0)
     float4 farWorldPosition = inverseViewMatrix * inverseProjectionMatrix * float4(vertexOut.currentClipPosition);
@@ -214,7 +221,8 @@ fragment FragmentOut fragmentSkybox(
     float3 dir = normalize(farWorldPosition.xyz - cameraPosition.xyz);
     
     //auto jitter = interleavedGradientNoise(vertexOut.position.xy);
-    auto jitter = smoothNoise(farWorldPosition.xyz * 10000.0);
+    // Sfrutta l'IGN in Screen Space combinandolo con l'assegnazione temporale
+    auto jitter = interleavedGradientNoise(vertexOut.position.xy * atmosphereSettings.jitterMultipliers.y);
     if (not atmosphereSettings.jitter) jitter = 0.5f;
     
     /*
@@ -348,7 +356,7 @@ fragment FragmentOut fragmentSkybox(
     fOut.color = float4(totalColor, 1.0f);
 
     fOut.motionVector = motionVector(vertexOut.currentClipPosition, vertexOut.previousClipPosition);
-    
+
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     
     
@@ -424,7 +432,8 @@ fragment FragmentOut fragmentSkybox(
         float density = 0.0f;
         // potential texture now contains density
         if (all(normalizedP >= 0.0f) && all(normalizedP <= 1.0f)) {
-            density = sampleDensitySmooth3D(densityTexture, densitySampler, normalizedP);
+            //density = smoothSample(densityTexture, densitySampler, normalizedP);
+            density = densityTexture.sample(densitySampler, normalizedP).x;
         }
         
         //float density = exp((Phi_surface - phi) / 100.0);
@@ -434,7 +443,7 @@ fragment FragmentOut fragmentSkybox(
         // Trasmittanza dal sole a questo punto nello spazio
         if (not atmosphereSettings.useBakedLightTransmittance) {
             T_sun = lightTransmittance(P, L, potentialSamplingInfo, betaR,
-                                              densityTexture, densitySampler, jitter, shadowMaps, shadowData, lights.numDirectionalLights, P, false, 1.0f, 0.01f, false, SUN_SAMPLES);
+                                              densityTexture, densitySampler, 0.0f, shadowMaps, shadowData, shadowSampler, lights.numDirectionalLights, P, false, 1.0f, 0.01f, false, SUN_SAMPLES);
         } else {
             T_sun = lightTransmittanceFromTexture(P, potentialSamplingInfo, lightTransmittanceTexture, densitySampler, betaR);
         }
@@ -450,8 +459,9 @@ fragment FragmentOut fragmentSkybox(
     // Applichiamo l'effetto: lo sfondo viene spento dall'opacità dell'aria (transmittanceCamera)
     // e viene aggiunto il colore azzurro/arancione dell'atmosfera illuminata
     float3 finalColor = backgroundSpace * transmittanceCamera + accumulatedScattering;
-    finalColor += (jitter - 0.5f) / 255.0f;
+    //finalColor += (jitter - 0.5f) / 255.0f;
     return {float4(finalColor, 1.0f), fOut.motionVector};
+    //return {float4(100.0f * abs(fOut.motionVector), 0, 1), fOut.motionVector};
     
     
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
